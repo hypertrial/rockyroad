@@ -25,6 +25,7 @@ services:
       ROCKYROAD_DUCKDB_PATH: /data/rockyroad.duckdb
       ROCKYROAD_GEO_DIR: /data/geo
       ROCKYROAD_MAPS_DIR: /data/maps
+      ROCKYROAD_OSM_DIR: /data/osm
       ROCKYROAD_ROUTING_DIR: /data/routing/valhalla
       ROCKYROAD_API_HOST: 0.0.0.0
       ROCKYROAD_API_PORT: 8000

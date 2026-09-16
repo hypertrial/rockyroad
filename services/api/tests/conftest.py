@@ -19,10 +19,13 @@ def settings(tmp_path: Path) -> Settings:
     maps_dir.mkdir()
     routing_dir = tmp_path / "routing"
     routing_dir.mkdir()
+    osm_dir = tmp_path / "osm"
+    osm_dir.mkdir()
     return Settings(
         duckdb_path=tmp_path / "rockyroad.duckdb",
         geo_dir=geo_dir,
         maps_dir=maps_dir,
+        osm_dir=osm_dir,
         routing_dir=routing_dir,
         valhalla_url="http://valhalla.test",
     )

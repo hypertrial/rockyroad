@@ -39,10 +39,10 @@ Keep generated PBF, PMTiles, graphs, Parquet, and DuckDB files out of Git.
 ## Host tools
 
 - `osmium` for multi-region merge. `build-places` uses host `osmium` when present and otherwise Docker (`iboates/osmium:1.19.0`). Sample `update-osm` still copies a single extract without osmium.
-- Java 21+ for Planetiler (`/usr/bin/java` on macOS is often 17; Homebrew `openjdk@21` is used if present). Place `planetiler.jar` (v0.9.0) in `tools/`. The first map build also needs Natural Earth, water polygons, and lake centerlines under `data/sources/` (copy them there, or run Planetiler once with `--download`). `build-map` itself does not fetch those files.
+- Java 21+ for Planetiler (`/usr/bin/java` on macOS is often 17; Homebrew `openjdk@21` is used if present). Place `planetiler.jar` (v0.9.0) in `tools/`. The first map build also needs Natural Earth, water polygons, and lake centerlines under `data/sources/` (copy them there, or run Planetiler once with `--download`). `build-map` itself does not fetch those files. Heap defaults to 4g; set `ROCKYROAD_PLANETILER_XMX=32g` (or similar) for `canada-usa`.
 - Valhalla tools (`valhalla_build_tiles` and `valhalla_build_extract`) or Docker. `build-routing` uses the host binaries when present and otherwise builds with `ghcr.io/valhalla/valhalla-scripted`.
 
-Planetiler is also available as `infra/map/Dockerfile` if you prefer a containerized map build.
+Planetiler is also available as `infra/map/Dockerfile` if you prefer a containerized map build. That image defaults to `-Xmx4g` via `JAVA_TOOL_OPTIONS`; override the env var for a larger extract.
 
 ## Incremental replacement
 

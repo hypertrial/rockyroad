@@ -82,7 +82,7 @@ if ! curl -sf "http://127.0.0.1:8002/status" >/dev/null 2>&1; then
   fi
 fi
 
-if ! curl -sf -o /dev/null "http://127.0.0.1:8000/maps/north-america.pmtiles"; then
+if ! curl -sf -o /dev/null -r 0-0 "http://127.0.0.1:8000/maps/north-america.pmtiles"; then
   echo "PMTiles are not built yet (GET /maps/north-america.pmtiles → 404)."
   echo "  uv run rockyroad-data update-osm --profile sample"
   echo "  uv run rockyroad-data build-map"

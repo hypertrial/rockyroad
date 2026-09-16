@@ -53,7 +53,7 @@ Full Canada + USA:
 uv run rockyroad-data update-osm --profile canada-usa
 ```
 
-See [docs/data-build.md](docs/data-build.md) for disk/RAM expectations, replacement, rollback, and attribution.
+See [docs/data-build.md](docs/data-build.md) for disk/RAM expectations, replacement, rollback, and attribution. For `canada-usa` map builds, set `ROCKYROAD_PLANETILER_XMX=32g` (or similar) so Planetiler can use the machine RAM.
 
 ## Runtime rules
 

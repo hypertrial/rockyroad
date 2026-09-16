@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from rockyroad_api.main import create_app
 from rockyroad_api.models import Maneuver, RouteAlternative
 from rockyroad_api.routing import RouteComputation
+from rockyroad_api.settings import Settings
 
 
 def test_health_and_trip_roundtrip(client: TestClient) -> None:
@@ -15,6 +18,7 @@ def test_health_and_trip_roundtrip(client: TestClient) -> None:
     assert health.json()["status"] == "degraded"
     assert "bounds" in health.json()
     assert "update-osm --profile sample" in (health.json()["detail"] or "")
+    assert health.json()["bounds"] is None
     maps = client.get("/maps/north-america.pmtiles")
     assert maps.status_code == 404
     created = client.post("/api/trips", json={"name": "Cabot loop"})
@@ -29,6 +33,19 @@ def test_health_and_trip_roundtrip(client: TestClient) -> None:
     )
     assert updated.status_code == 200
     assert len(updated.json()["stops"]) == 2
+
+
+def test_health_bounds_use_settings_osm_dir(settings: Settings) -> None:
+    (settings.osm_dir / "manifest.json").write_text(json.dumps({"profile": "sample"}), encoding="utf-8")
+    with TestClient(create_app(settings)) as client:
+        payload = client.get("/api/health").json()
+    assert payload["bounds"] == [-64.45, 45.9, -61.9, 47.1]
+
+
+def test_health_bounds_absent_without_osm_manifest(settings: Settings) -> None:
+    with TestClient(create_app(settings)) as client:
+        payload = client.get("/api/health").json()
+    assert payload["bounds"] is None
 
 
 def test_route_uses_valhalla_and_caches(client: TestClient) -> None:

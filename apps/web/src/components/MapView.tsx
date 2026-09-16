@@ -5,6 +5,7 @@ import { Protocol } from "pmtiles";
 import { useEffect, useRef } from "react";
 import { api } from "../lib/api";
 import { initialMapCamera } from "../lib/mapCamera";
+import { syncTripRouteLayer, type RouteMap } from "../lib/mapRouteLayer";
 import { plannerMapStyle } from "../lib/mapStyle";
 import type { Trip } from "../lib/types";
 import { tripRoute } from "../router";
@@ -40,6 +41,8 @@ export function MapView({ trip, onAddStop }: Props) {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: false });
   const mapsAvailable = health.data?.maps === true;
   const selected = trip.route?.alternatives[trip.settings.selected_alternative] ?? trip.route?.alternatives[0];
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current || health.isPending) return;
@@ -54,7 +57,10 @@ export function MapView({ trip, onAddStop }: Props) {
       attributionControl: { compact: true },
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-    map.on("load", () => setMapReady(true));
+    map.on("load", () => {
+      setMapReady(true);
+      syncTripRouteLayer(map as unknown as RouteMap, selectedRef.current?.geometry);
+    });
     map.on("error", (event) => {
       const error = event.error as { status?: number; message?: string } | undefined;
       if (error?.status === 404 || error?.message?.includes("404")) {
@@ -104,35 +110,8 @@ export function MapView({ trip, onAddStop }: Props) {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
-    const sourceId = "trip-route";
-    if (map.getSource(sourceId)) {
-      const source = map.getSource(sourceId) as maplibregl.GeoJSONSource;
-      source.setData({
-        type: "Feature",
-        properties: {},
-        geometry: selected?.geometry ?? { type: "LineString", coordinates: [] },
-      });
-      return;
-    }
-    map.addSource(sourceId, {
-      type: "geojson",
-      data: {
-        type: "Feature",
-        properties: {},
-        geometry: selected?.geometry ?? { type: "LineString", coordinates: [] },
-      },
-    });
-    map.addLayer({
-      id: "trip-route-line",
-      type: "line",
-      source: sourceId,
-      paint: {
-        "line-color": "#b4532a",
-        "line-width": 4,
-        "line-opacity": 0.9,
-      },
-    });
+    if (!map) return;
+    syncTripRouteLayer(map as unknown as RouteMap, selected?.geometry);
   }, [selected]);
 
   return (

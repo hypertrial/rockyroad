@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -15,13 +17,22 @@ from rockyroad_data.paths import (
     MERGED_PBF,
     OSM_MANIFEST,
     PLANETILER_JAR,
-    TOOLS_DIR,
+    REPO_ROOT,
     ensure_data_dirs,
 )
-from rockyroad_data.process import require_java, run_command
+from rockyroad_data.process import ToolError, require_java, run_command
+
+_XMX_RE = re.compile(r"^[0-9]+[kKmMgG]$")
 
 PLANETILER_URL = "https://github.com/onthegomap/planetiler/releases/download/v0.9.0/planetiler.jar"
 PMTILES_NAME = "north-america.pmtiles"
+
+
+def planetiler_xmx() -> str:
+    raw = os.environ.get("ROCKYROAD_PLANETILER_XMX", "4g").strip()
+    if not _XMX_RE.fullmatch(raw):
+        raise ToolError(f"ROCKYROAD_PLANETILER_XMX must look like 4g or 32g, got {raw!r}")
+    return raw
 
 
 def require_planetiler(destination: Path = PLANETILER_JAR) -> Path:
@@ -54,7 +65,7 @@ def build_map(
     run_command(
         [
             java,
-            "-Xmx4g",
+            f"-Xmx{planetiler_xmx()}",
             "-jar",
             str(planetiler),
             "--osm-path",
@@ -63,7 +74,7 @@ def build_map(
             str(tmp),
             "--force",
         ],
-        cwd=TOOLS_DIR,
+        cwd=REPO_ROOT,
     )
     tmp.replace(output)
     osm_manifest = read_json(OSM_MANIFEST)
