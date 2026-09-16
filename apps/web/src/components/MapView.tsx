@@ -1,9 +1,12 @@
+import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import maplibregl from "maplibre-gl";
 import { Protocol } from "pmtiles";
 import { useEffect, useRef } from "react";
-import { useNavigate } from "@tanstack/react-router";
-import { tripRoute } from "../router";
+import { api } from "../lib/api";
+import { plannerMapStyle } from "../lib/mapStyle";
 import type { Trip } from "../lib/types";
+import { tripRoute } from "../router";
 import { useUiStore } from "../stores/ui";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -31,22 +34,28 @@ export function MapView({ trip, onAddStop }: Props) {
   const selectedStopId = useUiStore((state) => state.selectedStopId);
   const setMapReady = useUiStore((state) => state.setMapReady);
   const setViewport = useUiStore((state) => state.setViewport);
-  const mapReady = useUiStore((state) => state.mapReady);
+  const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: false });
+  const mapsAvailable = health.data?.maps === true;
   const selected = trip.route?.alternatives[trip.settings.selected_alternative] ?? trip.route?.alternatives[0];
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
-    ensurePmtilesProtocol();
+    if (!containerRef.current || mapRef.current || health.isPending) return;
+    if (mapsAvailable) ensurePmtilesProtocol();
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: "/map/style.json",
+      style: plannerMapStyle(mapsAvailable),
       center: [-96.5, 48.5],
       zoom: 3.4,
       attributionControl: { compact: true },
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     map.on("load", () => setMapReady(true));
-    map.on("error", () => setMapReady(false));
+    map.on("error", (event) => {
+      const error = event.error as { status?: number; message?: string } | undefined;
+      if (error?.status === 404 || error?.message?.includes("404")) {
+        setMapReady(false);
+      }
+    });
     map.on("click", (event) => addStopRef.current(event.lngLat.lng, event.lngLat.lat));
     map.on("moveend", () => {
       const center = map.getCenter();
@@ -71,8 +80,9 @@ export function MapView({ trip, onAddStop }: Props) {
     return () => {
       map.remove();
       mapRef.current = null;
+      setMapReady(false);
     };
-  }, [navigate, setMapReady, setViewport]);
+  }, [health.isPending, mapsAvailable, navigate, setMapReady, setViewport]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -123,11 +133,8 @@ export function MapView({ trip, onAddStop }: Props) {
   return (
     <div className="map-wrap">
       <div ref={containerRef} className="map-canvas" role="application" aria-label="Trip map" />
-      {!mapReady ? (
-        <div className="map-banner">
-          Local tiles load from <code>/maps/north-america.pmtiles</code>. If the map is blank, run{" "}
-          <code>uv run rockyroad-data build-map</code>.
-        </div>
+      {!mapsAvailable ? (
+        <div className="map-banner">{health.data?.detail ?? "Local PMTiles are missing."}</div>
       ) : null}
       <div className="map-legend">Click the map to drop a stop. Drag nothing to the cloud.</div>
     </div>

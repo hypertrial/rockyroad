@@ -34,7 +34,7 @@ def test_build_map_does_not_pass_download(tmp_path: Path, monkeypatch: pytest.Mo
         output = Path(args[args.index("--output") + 1])
         output.write_bytes(b"pmtiles")
 
-    monkeypatch.setattr("rockyroad_data.maps.require_executable", lambda _name: "java")
+    monkeypatch.setattr("rockyroad_data.maps.require_java", lambda: "java")
     monkeypatch.setattr("rockyroad_data.maps.run_command", fake_run)
     monkeypatch.setattr("rockyroad_data.maps.ensure_data_dirs", lambda: None)
 

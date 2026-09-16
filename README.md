@@ -15,9 +15,9 @@ RockyRoad is a monorepo:
 ./scripts/dev
 ```
 
-The script installs missing Python/frontend dependencies, copies `.env.example` if needed, then starts the API and Vite app together. Open `http://127.0.0.1:5173`. Vite proxies `/api` and `/maps` to FastAPI; PMTiles come from `data/maps`. Routing still needs Valhalla on `:8002`.
+The script installs missing Python/frontend dependencies, copies `.env.example` if needed, then starts the API and Vite app together. Open `http://127.0.0.1:5173`. Vite proxies `/api` and `/maps` to FastAPI; PMTiles come from `data/maps`. Routing still needs Valhalla on `:8002` (`docker compose up -d valhalla` after `build-routing`).
 
-Build the sample Prince Edward Island extract first if you want a real map and local search (needs Java, Osmium, Valhalla tools, and a local `tools/planetiler.jar`):
+Build the sample Prince Edward Island extract first if you want a real map and local search (needs Java 21+, a local `tools/planetiler.jar`, and Osmium only for `build-places` or multi-region merges):
 
 ```bash
 uv run rockyroad-data update-osm --profile sample

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import re
 import shutil
 import subprocess
 from collections.abc import Sequence
@@ -15,6 +17,47 @@ def require_executable(name: str) -> str:
     if path is None:
         raise ToolError(f"required executable is not on PATH: {name}")
     return path
+
+
+def _java_major(java_bin: str) -> int | None:
+    completed = subprocess.run([java_bin, "-version"], check=False, capture_output=True, text=True)
+    text = f"{completed.stderr}\n{completed.stdout}"
+    match = re.search(r'version "(\d+)', text)
+    return int(match.group(1)) if match else None
+
+
+def require_java(min_major: int = 21) -> str:
+    candidates: list[str] = []
+    java_home = os.environ.get("JAVA_HOME")
+    if java_home:
+        candidates.append(str(Path(java_home) / "bin" / "java"))
+    for helper in ("/usr/libexec/java_home",):
+        if Path(helper).exists():
+            probed = subprocess.run([helper, "-v", f"{min_major}+"], check=False, capture_output=True, text=True)
+            if probed.returncode == 0 and probed.stdout.strip():
+                candidates.append(str(Path(probed.stdout.strip()) / "bin" / "java"))
+    for extra in (
+        Path("/opt/homebrew/opt/openjdk@21/bin/java"),
+        Path("/opt/homebrew/opt/openjdk@25/bin/java"),
+        Path("/opt/homebrew/opt/openjdk/bin/java"),
+    ):
+        if extra.exists():
+            candidates.append(str(extra))
+    which = shutil.which("java")
+    if which:
+        candidates.append(which)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate in seen or not Path(candidate).exists():
+            continue
+        seen.add(candidate)
+        major = _java_major(candidate)
+        if major is not None and major >= min_major:
+            return candidate
+    raise ToolError(
+        f"Java {min_major}+ is required for Planetiler. Install Temurin/OpenJDK {min_major} or set JAVA_HOME."
+    )
 
 
 def run_command(

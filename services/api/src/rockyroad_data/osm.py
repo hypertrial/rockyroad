@@ -49,7 +49,8 @@ def verify_md5(pbf_path: Path, md5_text: str) -> None:
 
 
 def merge_extracts(pbf_paths: list[Path], output: Path) -> None:
-    osmium = require_executable("osmium")
+    if not pbf_paths:
+        raise ValueError("at least one OSM extract is required")
     output.parent.mkdir(parents=True, exist_ok=True)
     tmp = output.with_suffix(".tmp.osm.pbf")
     if tmp.exists():
@@ -57,6 +58,7 @@ def merge_extracts(pbf_paths: list[Path], output: Path) -> None:
     if len(pbf_paths) == 1:
         tmp.write_bytes(pbf_paths[0].read_bytes())
     else:
+        osmium = require_executable("osmium")
         run_command([osmium, "merge", *[str(path) for path in pbf_paths], "-o", str(tmp)])
     tmp.replace(output)
 

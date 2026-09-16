@@ -20,7 +20,10 @@ def health(request: Request) -> HealthResponse:
     status = "ok" if geo_ok and maps_ok and routing_ok else "degraded"
     detail = None
     if not maps_ok:
-        detail = "PMTiles basemap is missing. Run rockyroad-data build-map."
+        detail = (
+            "PMTiles basemap is missing. "
+            "Run uv run rockyroad-data update-osm --profile sample && uv run rockyroad-data build-map."
+        )
     elif not routing_ok:
         detail = "Valhalla graph is missing. Run rockyroad-data build-routing."
     elif not geo_ok:

@@ -46,6 +46,8 @@ services:
       use_tiles_ignore_pbf: "True"
       serve_tiles: "True"
       build_tiles: "False"
+    ports:
+      - "127.0.0.1:8002:8002"
     volumes:
       - ./data/routing/valhalla:/custom_files
     healthcheck:

@@ -39,7 +39,7 @@ Keep generated PBF, PMTiles, graphs, Parquet, and DuckDB files out of Git.
 ## Host tools
 
 - `osmium` for merge, tag filter, and GeoJSONSeq export
-- Java 21+ for Planetiler. Place `planetiler.jar` (v0.9.0) and any previously cached Planetiler data files in `tools/` first. `build-map` is offline and will not download the jar or Natural Earth inputs.
+- Java 21+ for Planetiler (`/usr/bin/java` on macOS is often 17; Homebrew `openjdk@21` is used if present). Place `planetiler.jar` (v0.9.0) in `tools/`. The first map build also needs Natural Earth, water polygons, and lake centerlines under `data/sources/` (copy them there, or run Planetiler once with `--download`). `build-map` itself does not fetch those files.
 - `valhalla_build_tiles` and `valhalla_build_extract` for the routing graph
 
 Planetiler is also available as `infra/map/Dockerfile` if you prefer a containerized map build.
@@ -72,7 +72,7 @@ Restore by replacing the same paths and restarting Compose. Trip tables live onl
 ./scripts/dev
 ```
 
-That starts FastAPI on `:8000` and Vite on `:5173`. Vite proxies `/api` and `/maps` to the API, which serves `data/maps` with byte ranges. Routing still needs a local Valhalla process on `:8002` after `build-routing`.
+That starts FastAPI on `:8000` and Vite on `:5173`. Vite proxies `/api` and `/maps` to the API, which serves `data/maps` with byte ranges. Routing still needs Valhalla on `:8002` after `build-routing`; `docker compose up -d valhalla` publishes that port on localhost for the host API.
 
 ## Offline verification
 

@@ -18,7 +18,7 @@ from rockyroad_data.paths import (
     TOOLS_DIR,
     ensure_data_dirs,
 )
-from rockyroad_data.process import require_executable, run_command
+from rockyroad_data.process import require_java, run_command
 
 PLANETILER_URL = "https://github.com/onthegomap/planetiler/releases/download/v0.9.0/planetiler.jar"
 PMTILES_NAME = "north-america.pmtiles"
@@ -46,7 +46,7 @@ def build_map(
     dest_dir = output_dir or MAPS_DIR
     dest_dir.mkdir(parents=True, exist_ok=True)
     output = dest_dir / PMTILES_NAME
-    java = require_executable("java")
+    java = require_java()
     planetiler = require_planetiler(jar or PLANETILER_JAR)
     tmp = output.with_suffix(".tmp.pmtiles")
     if tmp.exists():
