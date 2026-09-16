@@ -10,6 +10,29 @@ import type {
   TripSummary,
 } from "./types";
 
+export function formatApiErrorDetail(detail: unknown): string | undefined {
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && "msg" in item) {
+          const message = (item as { msg: unknown }).msg;
+          return typeof message === "string" ? message : undefined;
+        }
+        return undefined;
+      })
+      .filter((item): item is string => Boolean(item));
+    return parts.length ? parts.join("; ") : undefined;
+  }
+  if (detail && typeof detail === "object") {
+    return JSON.stringify(detail);
+  }
+  return undefined;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -21,8 +44,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     let detail = response.statusText;
     try {
-      const payload = (await response.json()) as { detail?: string };
-      if (payload.detail) detail = payload.detail;
+      const payload = (await response.json()) as { detail?: unknown };
+      detail = formatApiErrorDetail(payload.detail) ?? detail;
     } catch {
       detail = await response.text();
     }

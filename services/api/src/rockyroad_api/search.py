@@ -58,65 +58,55 @@ def search_places(
     if not cleaned:
         return SearchResponse(query=query, results=[])
     max_results = limit or db.settings.max_search_results
-    spatial_sql = ""
-    params: list[Any] = [cleaned]
-    if viewport is not None:
-        spatial_sql = "AND lon BETWEEN ? AND ? AND lat BETWEEN ? AND ?"
-        params.extend([viewport.west, viewport.east, viewport.south, viewport.north])
-    params.append(max_results * 5)
-    try:
-        rows = db.conn.execute(
-            f"""
-            SELECT
-                id,
-                dataset,
-                name,
-                feature_type,
-                lon,
-                lat,
-                population,
-                population_score,
-                importance,
-                type_prior,
-                fts_main_geo_features.match_bm25(id, ?) AS bm25
-            FROM geo_features
-            WHERE 1 = 1
-            {spatial_sql}
-            QUALIFY bm25 IS NOT NULL
-            ORDER BY bm25 DESC
-            LIMIT ?
-            """,
-            params,
-        ).fetchall()
-    except Exception:
-        like = f"%{cleaned.casefold()}%"
-        fallback_params: list[Any] = [like, like]
-        extra = ""
-        if viewport is not None:
-            extra = "AND lon BETWEEN ? AND ? AND lat BETWEEN ? AND ?"
-            fallback_params.extend([viewport.west, viewport.east, viewport.south, viewport.north])
-        fallback_params.append(max_results * 5)
-        rows = db.conn.execute(
-            f"""
-            SELECT
-                id,
-                dataset,
-                name,
-                feature_type,
-                lon,
-                lat,
-                population,
-                population_score,
-                importance,
-                type_prior,
-                1.0 AS bm25
-            FROM geo_features
-            WHERE (normalized_name LIKE ? OR search_text LIKE ?)
-            {extra}
-            LIMIT ?
-            """,
-            fallback_params,
-        ).fetchall()
+    params: list[Any] = [cleaned, max_results * 5]
+
+    def _query(conn: Any) -> list[Any]:
+        try:
+            return conn.execute(
+                """
+                SELECT
+                    id,
+                    dataset,
+                    name,
+                    feature_type,
+                    lon,
+                    lat,
+                    population,
+                    population_score,
+                    importance,
+                    type_prior,
+                    fts_main_geo_features.match_bm25(id, ?) AS bm25
+                FROM geo_features
+                QUALIFY bm25 IS NOT NULL
+                ORDER BY bm25 DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        except Exception:
+            like = f"%{cleaned.casefold()}%"
+            return conn.execute(
+                """
+                SELECT
+                    id,
+                    dataset,
+                    name,
+                    feature_type,
+                    lon,
+                    lat,
+                    population,
+                    population_score,
+                    importance,
+                    type_prior,
+                    1.0 AS bm25
+                FROM geo_features
+                WHERE (normalized_name LIKE ? OR search_text LIKE ?)
+                LIMIT ?
+                """,
+                [like, like, max_results * 5],
+            ).fetchall()
+
+    rows = db.read(_query)
 
     mapped = [
         {

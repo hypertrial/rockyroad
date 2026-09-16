@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 from rockyroad_data.manifests import (
     artifact_record,
     file_sha256,
@@ -13,7 +11,6 @@ from rockyroad_data.manifests import (
     write_json_atomic,
 )
 from rockyroad_data.paths import (
-    MAP_MANIFEST,
     MAPS_DIR,
     MERGED_PBF,
     OSM_MANIFEST,
@@ -27,24 +24,21 @@ PLANETILER_URL = "https://github.com/onthegomap/planetiler/releases/download/v0.
 PMTILES_NAME = "north-america.pmtiles"
 
 
-def download_planetiler(destination: Path = PLANETILER_JAR) -> Path:
+def require_planetiler(destination: Path = PLANETILER_JAR) -> Path:
     if destination.exists() and destination.stat().st_size > 1_000_000:
         return destination
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    tmp = destination.with_suffix(".part")
-    with (
-        httpx.Client(follow_redirects=True, timeout=180.0) as client,
-        client.stream("GET", PLANETILER_URL) as response,
-    ):
-        response.raise_for_status()
-        with tmp.open("wb") as handle:
-            for chunk in response.iter_bytes():
-                handle.write(chunk)
-    tmp.replace(destination)
-    return destination
+    raise FileNotFoundError(
+        f"Planetiler jar is missing at {destination}. "
+        f"Place planetiler.jar from {PLANETILER_URL} into tools/ before running build-map. "
+        "build-map is offline and will not download it."
+    )
 
 
-def build_map(pbf: Path | None = None, output_dir: Path | None = None) -> dict[str, Any]:
+def build_map(
+    pbf: Path | None = None,
+    output_dir: Path | None = None,
+    jar: Path | None = None,
+) -> dict[str, Any]:
     ensure_data_dirs()
     source = pbf or MERGED_PBF
     if not source.exists():
@@ -53,7 +47,7 @@ def build_map(pbf: Path | None = None, output_dir: Path | None = None) -> dict[s
     dest_dir.mkdir(parents=True, exist_ok=True)
     output = dest_dir / PMTILES_NAME
     java = require_executable("java")
-    jar = download_planetiler()
+    planetiler = require_planetiler(jar or PLANETILER_JAR)
     tmp = output.with_suffix(".tmp.pmtiles")
     if tmp.exists():
         tmp.unlink()
@@ -62,12 +56,11 @@ def build_map(pbf: Path | None = None, output_dir: Path | None = None) -> dict[s
             java,
             "-Xmx4g",
             "-jar",
-            str(jar),
+            str(planetiler),
             "--osm-path",
             str(source),
             "--output",
             str(tmp),
-            "--download",
             "--force",
         ],
         cwd=TOOLS_DIR,
@@ -81,5 +74,5 @@ def build_map(pbf: Path | None = None, output_dir: Path | None = None) -> dict[s
         "pmtiles": artifact_record(output),
         "version": file_sha256(output)[:16],
     }
-    write_json_atomic(MAP_MANIFEST, manifest)
+    write_json_atomic(dest_dir / "manifest.json", manifest)
     return manifest

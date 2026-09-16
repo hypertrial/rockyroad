@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rockyroad_api.db import Database
 from rockyroad_api.models import StopIn, TripCreate, TripSettingsIn, TripUpdate
-from rockyroad_api.trips import create_trip, delete_trip, list_trips, replace_stops, update_trip
+from rockyroad_api.trips import apply_optimized_order, create_trip, delete_trip, list_trips, replace_stops, update_trip
 
 CHARLOTTETOWN = StopIn(name="Charlottetown", lon=-63.131, lat=46.238)
 SUMMERSIDE = StopIn(name="Summerside", lon=-63.79, lat=46.393)
@@ -15,6 +15,15 @@ def test_create_and_list_trips(db: Database) -> None:
     summaries = list_trips(db)
     assert summaries[0].id == created.id
     assert summaries[0].stop_count == 1
+
+
+def test_apply_optimized_order_permutes_and_rejects_invalid(db: Database) -> None:
+    trip = create_trip(db, TripCreate(name="Order", stops=[CHARLOTTETOWN, SUMMERSIDE]))
+    first, second = trip.stops
+    reordered = apply_optimized_order(trip.stops, [1, 0])
+    assert [stop.id for stop in reordered] == [second.id, first.id]
+    assert [stop.position for stop in reordered] == [0, 1]
+    assert apply_optimized_order(trip.stops, [0, 2]) == trip.stops
 
 
 def test_stop_order_is_stable(db: Database) -> None:

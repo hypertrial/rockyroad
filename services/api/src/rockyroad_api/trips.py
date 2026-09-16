@@ -71,49 +71,63 @@ def list_trips(db: Database) -> list[TripSummary]:
     ]
 
 
+def apply_optimized_order(stops: list[StopOut], order: list[int]) -> list[StopOut]:
+    if len(order) != len(stops) or sorted(order) != list(range(len(stops))):
+        return list(stops)
+    return [stops[index].model_copy(update={"position": position}) for position, index in enumerate(order)]
+
+
+def _as_stop_in(stops: list[StopOut]) -> list[StopIn]:
+    return [StopIn(id=stop.id, name=stop.name, lon=stop.lon, lat=stop.lat, place_id=stop.place_id) for stop in stops]
+
+
 def get_trip(db: Database, trip_id: UUID) -> TripOut | None:
-    trip = db.conn.execute(
-        "SELECT id, name, created_at, updated_at FROM trips WHERE id = ?",
-        [str(trip_id)],
-    ).fetchone()
-    if trip is None:
-        return None
-    stops = [
-        _row_stop(row)
-        for row in db.conn.execute(
+    version = routing_data_version(db.settings)
+
+    def _read(conn: Any) -> TripOut | None:
+        trip = conn.execute(
+            "SELECT id, name, created_at, updated_at FROM trips WHERE id = ?",
+            [str(trip_id)],
+        ).fetchone()
+        if trip is None:
+            return None
+        stops = [
+            _row_stop(row)
+            for row in conn.execute(
+                """
+                SELECT id, trip_id, position, name, lon, lat, place_id, created_at
+                FROM trip_stops
+                WHERE trip_id = ?
+                ORDER BY position
+                """,
+                [str(trip_id)],
+            ).fetchall()
+        ]
+        settings_row = conn.execute(
             """
-            SELECT id, trip_id, position, name, lon, lat, place_id, created_at
-            FROM trip_stops
+            SELECT trip_id, avoid_tolls, avoid_highways, avoid_ferries, costing, optimize,
+                   selected_alternative, updated_at
+            FROM trip_settings
             WHERE trip_id = ?
-            ORDER BY position
             """,
             [str(trip_id)],
-        ).fetchall()
-    ]
-    settings_row = db.conn.execute(
-        """
-        SELECT trip_id, avoid_tolls, avoid_highways, avoid_ferries, costing, optimize,
-               selected_alternative, updated_at
-        FROM trip_settings
-        WHERE trip_id = ?
-        """,
-        [str(trip_id)],
-    ).fetchone()
-    if settings_row is None:
-        return None
-    settings = _row_settings(settings_row)
-    version = routing_data_version(db.settings)
-    alternatives = load_cached_route(db.conn, trip_id, cache_key(stops, settings, version))
-    route = to_route_response(trip_id, alternatives, cache_hit=True, data_version=version) if alternatives else None
-    return TripOut(
-        id=trip[0],
-        name=trip[1],
-        created_at=trip[2],
-        updated_at=trip[3],
-        stops=stops,
-        settings=settings,
-        route=route,
-    )
+        ).fetchone()
+        if settings_row is None:
+            return None
+        settings = _row_settings(settings_row)
+        alternatives = load_cached_route(conn, trip_id, cache_key(stops, settings, version))
+        route = to_route_response(trip_id, alternatives, cache_hit=True, data_version=version) if alternatives else None
+        return TripOut(
+            id=trip[0],
+            name=trip[1],
+            created_at=trip[2],
+            updated_at=trip[3],
+            stops=stops,
+            settings=settings,
+            route=route,
+        )
+
+    return db.read(_read)
 
 
 def create_trip(db: Database, payload: TripCreate) -> TripOut:
@@ -191,17 +205,24 @@ def route_trip(db: Database, client: ValhallaClient, trip_id: UUID) -> RouteResp
         raise RoutingError("at least two stops are required to build a route", status_code=400)
     version = routing_data_version(db.settings)
     key = cache_key(trip.stops, trip.settings, version)
-    cached = load_cached_route(db.conn, trip_id, key)
+    cached = db.read(lambda conn: load_cached_route(conn, trip_id, key))
     if cached:
         return to_route_response(trip_id, cached, cache_hit=True, data_version=version)
-    alternatives = client.request_route(trip.stops, trip.settings)
+    computation = client.request_route(trip.stops, trip.settings)
+    ordered_stops = trip.stops
+    if trip.settings.optimize and computation.optimized_order is not None:
+        ordered_stops = apply_optimized_order(trip.stops, computation.optimized_order)
+    persist_key = cache_key(ordered_stops, trip.settings, version)
+    reordered = [stop.id for stop in ordered_stops] != [stop.id for stop in trip.stops]
 
     def _write(conn: Any) -> None:
-        persist_route(conn, trip_id, key, version, alternatives)
+        if reordered:
+            _replace_stops(conn, trip_id, _as_stop_in(ordered_stops))
+        persist_route(conn, trip_id, persist_key, version, computation.alternatives)
         conn.execute("UPDATE trips SET updated_at = now() WHERE id = ?", [str(trip_id)])
 
     db.write(_write)
-    return to_route_response(trip_id, alternatives, cache_hit=False, data_version=version)
+    return to_route_response(trip_id, computation.alternatives, cache_hit=False, data_version=version)
 
 
 def list_saved_places(db: Database) -> list[SavedPlaceOut]:

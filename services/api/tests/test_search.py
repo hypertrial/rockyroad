@@ -31,3 +31,23 @@ def test_rank_prefers_important_nearby_city() -> None:
     )
     assert ranked[0]["name"] == "Charlottetown"
     assert ranked[0]["score"] > ranked[1]["score"]
+
+
+def test_rank_keeps_places_outside_viewport() -> None:
+    viewport = Viewport(west=-123.3, south=49.1, east=-123.0, north=49.4)
+    ranked = rank_rows(
+        [
+            {
+                "name": "Charlottetown",
+                "bm25": 4.0,
+                "importance": 0.9,
+                "population_score": 0.7,
+                "type_prior": 1.0,
+                "lon": -63.13,
+                "lat": 46.24,
+            }
+        ],
+        viewport,
+    )
+    assert ranked[0]["name"] == "Charlottetown"
+    assert ranked[0]["distance_km"] > 0

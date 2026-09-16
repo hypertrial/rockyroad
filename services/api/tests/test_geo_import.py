@@ -48,6 +48,17 @@ def test_import_is_atomic_and_searchable(db: Database) -> None:
     assert results.results[0].name == "Charlottetown"
 
 
+def test_search_returns_places_outside_viewport(db: Database) -> None:
+    _write_geo(db, "v1")
+    import_geo_if_changed(db)
+    results = search_places(
+        db,
+        "charlottetown",
+        Viewport(west=-123.3, south=49.1, east=-123.0, north=49.4),
+    )
+    assert results.results[0].name == "Charlottetown"
+
+
 def test_failed_import_keeps_previous_dataset(db: Database) -> None:
     _write_geo(db, "v1")
     import_geo_if_changed(db)

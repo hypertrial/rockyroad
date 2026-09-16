@@ -26,7 +26,10 @@ def update_osm_command(
 
 @app.command("build-map")
 def build_map_command() -> None:
-    """Generate a local OpenMapTiles PMTiles basemap from the merged OSM extract."""
+    """Generate a local OpenMapTiles PMTiles basemap from the merged OSM extract.
+
+    Requires a local tools/planetiler.jar. This command does not use the network.
+    """
     manifest = build_map()
     typer.echo(f"Wrote PMTiles version {manifest['version']}")
 

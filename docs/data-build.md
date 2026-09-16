@@ -39,7 +39,7 @@ Keep generated PBF, PMTiles, graphs, Parquet, and DuckDB files out of Git.
 ## Host tools
 
 - `osmium` for merge, tag filter, and GeoJSONSeq export
-- Java 21+ for Planetiler (`tools/planetiler.jar` is downloaded by `build-map`)
+- Java 21+ for Planetiler. Place `planetiler.jar` (v0.9.0) and any previously cached Planetiler data files in `tools/` first. `build-map` is offline and will not download the jar or Natural Earth inputs.
 - `valhalla_build_tiles` and `valhalla_build_extract` for the routing graph
 
 Planetiler is also available as `infra/map/Dockerfile` if you prefer a containerized map build.

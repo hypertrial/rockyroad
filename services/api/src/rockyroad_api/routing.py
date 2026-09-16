@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
@@ -112,12 +113,43 @@ def parse_valhalla(payload: dict[str, Any]) -> list[RouteAlternative]:
     return alternatives
 
 
+def parse_optimized_order(payload: dict[str, Any]) -> list[int] | None:
+    trip = payload.get("trip")
+    if not isinstance(trip, dict):
+        return None
+    locations = trip.get("locations") or []
+    if not locations:
+        return None
+    order: list[int] = []
+    for index, location in enumerate(locations):
+        if not isinstance(location, dict):
+            return None
+        if "original_index" in location:
+            order.append(int(location["original_index"]))
+        else:
+            order.append(index)
+    return order
+
+
+@dataclass(frozen=True)
+class RouteComputation:
+    alternatives: list[RouteAlternative]
+    optimized_order: list[int] | None = None
+
+
+def parse_route_computation(payload: dict[str, Any]) -> RouteComputation:
+    return RouteComputation(
+        alternatives=parse_valhalla(payload),
+        optimized_order=parse_optimized_order(payload),
+    )
+
+
 class ValhallaClient:
     def __init__(self, settings: Settings, client: httpx.Client | None = None) -> None:
         self.settings = settings
         self.client = client or httpx.Client(timeout=settings.valhalla_timeout_s)
 
-    def request_route(self, stops: list[StopOut], settings: TripSettingsOut) -> list[RouteAlternative]:
+    def request_route(self, stops: list[StopOut], settings: TripSettingsOut) -> RouteComputation:
         if len(stops) < 2:
             raise RoutingError("at least two stops are required to build a route", status_code=400)
         path = "/optimized_route" if settings.optimize else "/route"
@@ -132,7 +164,7 @@ class ValhallaClient:
                 f"routing data could not produce a path ({response.status_code}): {detail}",
                 status_code=422 if response.status_code < 500 else 503,
             )
-        return parse_valhalla(response.json())
+        return parse_route_computation(response.json())
 
 
 def persist_route(

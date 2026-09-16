@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from rockyroad_api.models import Maneuver, RouteAlternative
+from rockyroad_api.routing import RouteComputation
 
 
 def test_health_and_trip_roundtrip(client: TestClient) -> None:
@@ -47,10 +48,44 @@ def test_route_uses_valhalla_and_caches(client: TestClient) -> None:
     )
     app = client.app
     assert isinstance(app, FastAPI)
-    app.state.valhalla.request_route = MagicMock(return_value=[fake])
+    app.state.valhalla.request_route = MagicMock(return_value=RouteComputation(alternatives=[fake]))
     first = client.post(f"/api/trips/{trip_id}/route")
     second = client.post(f"/api/trips/{trip_id}/route")
     assert first.status_code == 200
     assert first.json()["cache_hit"] is False
     assert second.json()["cache_hit"] is True
     assert app.state.valhalla.request_route.call_count == 1
+
+
+def test_optimize_persists_valhalla_stop_order(client: TestClient) -> None:
+    created = client.post("/api/trips", json={"name": "Optimize me"})
+    trip_id = created.json()["id"]
+    client.put(
+        f"/api/trips/{trip_id}/stops",
+        json=[
+            {"name": "A", "lon": -63.131, "lat": 46.238},
+            {"name": "B", "lon": -63.79, "lat": 46.393},
+            {"name": "C", "lon": -63.45, "lat": 46.49},
+        ],
+    )
+    fake = RouteAlternative(
+        index=0,
+        distance_m=50000,
+        duration_s=3000,
+        geometry={"type": "LineString", "coordinates": [[-63.13, 46.24], [-63.45, 46.49], [-63.79, 46.39]]},
+        maneuvers=[Maneuver(instruction="Loop", type=1, distance_m=50000, duration_s=3000)],
+    )
+    app = client.app
+    assert isinstance(app, FastAPI)
+    app.state.valhalla.request_route = MagicMock(
+        return_value=RouteComputation(alternatives=[fake], optimized_order=[0, 2, 1])
+    )
+    response = client.post(f"/api/trips/{trip_id}/optimize")
+    assert response.status_code == 200
+    trip = client.get(f"/api/trips/{trip_id}").json()
+    assert [stop["name"] for stop in trip["stops"]] == ["A", "C", "B"]
+    assert [stop["position"] for stop in trip["stops"]] == [0, 1, 2]
+    assert trip["settings"]["optimize"] is True
+    assert trip["route"] is not None
+    assert trip["route"]["cache_hit"] is True
+    assert trip["route"]["alternatives"][0]["distance_m"] == 50000

@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from rockyroad_api.models import StopOut, TripSettingsOut
 from rockyroad_api.polyline import decode_polyline
-from rockyroad_api.routing import cache_key, parse_valhalla, valhalla_payload
+from rockyroad_api.routing import cache_key, parse_optimized_order, parse_valhalla, valhalla_payload
 
 
 def _stop(name: str, lon: float, lat: float, position: int) -> StopOut:
@@ -84,3 +84,17 @@ def test_decode_and_parse_valhalla() -> None:
     alternatives = parse_valhalla(payload)
     assert alternatives[0].distance_m == 12300
     assert alternatives[0].maneuvers[0].instruction == "Drive north"
+
+
+def test_parse_optimized_order_uses_original_index() -> None:
+    payload = {
+        "trip": {
+            "locations": [
+                {"lat": 46.2, "lon": -63.1, "original_index": 0},
+                {"lat": 46.5, "lon": -63.4, "original_index": 2},
+                {"lat": 46.4, "lon": -63.8, "original_index": 1},
+            ]
+        }
+    }
+    assert parse_optimized_order(payload) == [0, 2, 1]
+    assert parse_optimized_order({"trip": {}}) is None
