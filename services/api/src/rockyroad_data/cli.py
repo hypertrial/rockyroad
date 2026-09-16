@@ -39,6 +39,9 @@ def build_routing_command() -> None:
     """Build a local Valhalla graph from the merged OSM extract."""
     manifest = build_routing()
     typer.echo(f"Wrote Valhalla graph version {manifest['version']}")
+    docker_files = manifest.get("docker_files")
+    if docker_files and Path(str(docker_files)).resolve() != ROUTING_MANIFEST.parent.resolve():
+        typer.echo(f"Set ROCKYROAD_VALHALLA_FILES={docker_files} before starting Valhalla.")
 
 
 @app.command("build-places")

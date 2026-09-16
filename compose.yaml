@@ -41,15 +41,20 @@ services:
       - internal
 
   valhalla:
-    image: ghcr.io/gisops/docker-valhalla/valhalla:latest
+    image: ghcr.io/valhalla/valhalla-scripted:latest
     environment:
       use_tiles_ignore_pbf: "True"
       serve_tiles: "True"
-      build_tiles: "False"
+      force_rebuild: "False"
+      build_admins: "False"
+      build_time_zones: "False"
+      build_elevation: "False"
+      use_default_speeds_config: "False"
+      tile_urls: ""
     ports:
       - "127.0.0.1:8002:8002"
     volumes:
-      - ./data/routing/valhalla:/custom_files
+      - ${ROCKYROAD_VALHALLA_FILES:-./data/routing/valhalla}:/custom_files
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/status')\""]
       interval: 15s

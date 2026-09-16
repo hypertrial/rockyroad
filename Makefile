@@ -44,4 +44,4 @@ compose-config:
 	docker-compose config >/dev/null 2>&1 || docker compose config >/dev/null
 
 compose-up:
-	docker compose up --build
+	docker-compose up --build || docker compose up --build

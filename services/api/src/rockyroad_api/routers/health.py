@@ -25,7 +25,7 @@ def health(request: Request) -> HealthResponse:
             "Run uv run rockyroad-data update-osm --profile sample && uv run rockyroad-data build-map."
         )
     elif not routing_ok:
-        detail = "Valhalla graph is missing. Run rockyroad-data build-routing."
+        detail = "Valhalla graph is missing. Run uv run rockyroad-data build-routing && docker compose up -d valhalla."
     elif not geo_ok:
         detail = "Place datasets are missing. Run rockyroad-data build-places."
     return HealthResponse(

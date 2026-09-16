@@ -15,7 +15,7 @@ RockyRoad is a monorepo:
 ./scripts/dev
 ```
 
-The script installs missing Python/frontend dependencies, copies `.env.example` if needed, then starts the API and Vite app together. Open `http://127.0.0.1:5173`. Vite proxies `/api` and `/maps` to FastAPI; PMTiles come from `data/maps`. Routing still needs Valhalla on `:8002` (`docker compose up -d valhalla` after `build-routing`).
+The script installs missing Python/frontend dependencies, copies `.env.example` if needed, then starts the API and Vite app together. Open `http://127.0.0.1:5173`. Vite proxies `/api` and `/maps` to FastAPI; PMTiles come from `data/maps`. Routing still needs Valhalla on `:8002` (`docker compose up -d valhalla` after `build-routing`; `docker-compose` works if the plugin is missing). `build-routing` uses host Valhalla tools when they are on PATH, otherwise Docker. If the repo path contains a space, set `ROCKYROAD_VALHALLA_FILES` to the Docker-visible tile directory printed by `build-routing` (typically `~/.cache/rockyroad/valhalla`).
 
 Build the sample Prince Edward Island extract first if you want a real map and local search (needs Java 21+, a local `tools/planetiler.jar`, and Osmium only for `build-places` or multi-region merges):
 

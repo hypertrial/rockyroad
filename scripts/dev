@@ -57,7 +57,18 @@ done
 if ! curl -sf "http://127.0.0.1:8002/status" >/dev/null 2>&1; then
   echo "Valhalla is not on :8002. Routes will fail until routing tiles are served."
   echo "Build them with: uv run rockyroad-data build-routing"
-  echo "Then publish Valhalla to the host with: docker compose up -d valhalla"
+  if docker compose version >/dev/null 2>&1; then
+    compose_cmd="docker compose"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    compose_cmd="docker-compose"
+  else
+    compose_cmd="docker compose"
+  fi
+  echo "Then publish Valhalla to the host with: ${compose_cmd} up -d valhalla"
+  if [[ "$root" == *" "* ]]; then
+    echo "This repo path has a space; Compose must bind a Docker-visible copy:"
+    echo "  export ROCKYROAD_VALHALLA_FILES=\"\$HOME/.cache/rockyroad/valhalla\""
+  fi
 fi
 
 if ! curl -sf -o /dev/null "http://127.0.0.1:8000/maps/north-america.pmtiles"; then

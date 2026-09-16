@@ -40,7 +40,7 @@ Keep generated PBF, PMTiles, graphs, Parquet, and DuckDB files out of Git.
 
 - `osmium` for merge, tag filter, and GeoJSONSeq export
 - Java 21+ for Planetiler (`/usr/bin/java` on macOS is often 17; Homebrew `openjdk@21` is used if present). Place `planetiler.jar` (v0.9.0) in `tools/`. The first map build also needs Natural Earth, water polygons, and lake centerlines under `data/sources/` (copy them there, or run Planetiler once with `--download`). `build-map` itself does not fetch those files.
-- `valhalla_build_tiles` and `valhalla_build_extract` for the routing graph
+- Valhalla tools (`valhalla_build_tiles` and `valhalla_build_extract`) or Docker. `build-routing` uses the host binaries when present and otherwise builds with `ghcr.io/valhalla/valhalla-scripted`.
 
 Planetiler is also available as `infra/map/Dockerfile` if you prefer a containerized map build.
 
@@ -72,7 +72,7 @@ Restore by replacing the same paths and restarting Compose. Trip tables live onl
 ./scripts/dev
 ```
 
-That starts FastAPI on `:8000` and Vite on `:5173`. Vite proxies `/api` and `/maps` to the API, which serves `data/maps` with byte ranges. Routing still needs Valhalla on `:8002` after `build-routing`; `docker compose up -d valhalla` publishes that port on localhost for the host API.
+That starts FastAPI on `:8000` and Vite on `:5173`. Vite proxies `/api` and `/maps` to the API, which serves `data/maps` with byte ranges. Routing still needs a graph plus Valhalla on `:8002`; `uv run rockyroad-data build-routing && docker compose up -d valhalla` builds the graph (host tools or Docker) and publishes the service on localhost for the host API. If the repo path contains a space, Docker Desktop cannot bind-mount `data/routing/valhalla`; `build-routing` stages tiles under `~/.cache/rockyroad/valhalla` and Compose should set `ROCKYROAD_VALHALLA_FILES` to that directory.
 
 ## Offline verification
 
@@ -101,6 +101,6 @@ If you publish a map produced from this pipeline, keep OSM attribution visible. 
 | --- | --- | --- |
 | `update-osm` rejects an extract | Path is not allow-listed | Add it under `config/regions.yaml` |
 | Blank map | Missing PMTiles | `build-map`, then confirm `/maps/north-america.pmtiles` |
-| Route 503 | Valhalla graph missing or service down | `build-routing` and check `data/routing/valhalla/manifest.json` |
+| Route 503 | Valhalla graph missing or service down | `build-routing`, then `docker compose up -d valhalla`. If the repo path has a space, set `ROCKYROAD_VALHALLA_FILES` to the path printed by `build-routing` |
 | Empty search | Parquet not imported | `build-places`, then restart API or `POST /api/admin/import-geo` |
 | DuckDB extension download | Image was built without `INSTALL spatial/fts` | Rebuild `infra/api/Dockerfile` |
