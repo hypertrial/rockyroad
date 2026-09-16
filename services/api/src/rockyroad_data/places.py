@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import shutil
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -17,14 +19,15 @@ from rockyroad_data.manifests import (
 )
 from rockyroad_data.paths import (
     GEO_DIR,
-    GEO_MANIFEST,
     MERGED_PBF,
     OSM_MANIFEST,
     PARQUET_DATASETS,
     ensure_data_dirs,
 )
-from rockyroad_data.process import require_executable, run_command
+from rockyroad_data.process import ToolError, docker_stage_dir, require_executable, run_command
 from rockyroad_data.regions import load_regions
+
+OSMIUM_IMAGE = os.environ.get("ROCKYROAD_OSMIUM_IMAGE", "iboates/osmium:1.19.0")
 
 OSMIUM_FILTERS = [
     "n/place",
@@ -137,6 +140,15 @@ def aliases(props: dict[str, Any]) -> str:
     return " ".join(values)
 
 
+def dedupe_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    best: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        current = best.get(row["id"])
+        if current is None or float(row.get("importance") or 0) > float(current.get("importance") or 0):
+            best[row["id"]] = row
+    return list(best.values())
+
+
 def importance_for(feature_kind: str, priors: dict[str, float], population_score: float) -> float:
     prior = float(priors.get(feature_kind, priors.get("other", 0.2)))
     return min(1.0, 0.65 * prior + 0.35 * population_score)
@@ -172,7 +184,12 @@ def rows_from_export(export_path: Path, priors: dict[str, float]) -> dict[str, l
         lon, lat = point
         population_score = log_population(props.get("population"))
         search_text = aliases(props) or normalize_name(str(name))
-        osm_id = str(props.get("@id") or props.get("id") or f"{dataset}:{name}:{lon}:{lat}")
+        osm_id = str(
+            feature.get("id")
+            or props.get("@id")
+            or props.get("id")
+            or f"{dataset}:{normalize_name(str(name))}:{lon:.6f}:{lat:.6f}"
+        )
         buckets[dataset].append(
             {
                 "id": osm_id,
@@ -189,7 +206,7 @@ def rows_from_export(export_path: Path, priors: dict[str, float]) -> dict[str, l
                 "admin_level": props.get("admin_level"),
             }
         )
-    return buckets
+    return {name: dedupe_rows(items) for name, items in buckets.items()}
 
 
 def _as_int(raw: Any) -> int | None:
@@ -227,27 +244,102 @@ def write_parquet_datasets(buckets: dict[str, list[dict[str, Any]]], output_dir:
     return written
 
 
-def export_filtered_features(pbf: Path, export_path: Path) -> None:
-    osmium = require_executable("osmium")
-    filtered = export_path.with_suffix(".filtered.osm.pbf")
-    if filtered.exists():
-        filtered.unlink()
-    run_command([osmium, "tags-filter", str(pbf), *OSMIUM_FILTERS, "-o", str(filtered)])
-    if export_path.exists():
-        export_path.unlink()
-    run_command(
+def _osmium_args(osmium: str, filtered: Path, export_path: Path, source: Path) -> tuple[list[str], list[str]]:
+    return (
+        [osmium, "tags-filter", str(source), *OSMIUM_FILTERS, "-o", str(filtered)],
         [
             osmium,
             "export",
             "-f",
             "geojsonseq",
+            "-u",
+            "type_id",
             "--geometry-types=point,polygon",
             str(filtered),
             "-o",
             str(export_path),
-        ]
+        ],
     )
+
+
+def _export_filtered_host(pbf: Path, export_path: Path) -> None:
+    osmium = require_executable("osmium")
+    filtered = export_path.with_suffix(".filtered.osm.pbf")
+    if filtered.exists():
+        filtered.unlink()
+    if export_path.exists():
+        export_path.unlink()
+    filter_args, export_args = _osmium_args(osmium, filtered, export_path, pbf)
+    run_command(filter_args)
+    run_command(export_args)
     filtered.unlink(missing_ok=True)
+
+
+def _export_filtered_docker(pbf: Path, export_path: Path) -> None:
+    docker = require_executable("docker")
+    work = docker_stage_dir(export_path.parent, env_var="ROCKYROAD_OSMIUM_FILES", cache_name="osmium")
+    staged = work / "input.osm.pbf"
+    filtered = work / "features.filtered.osm.pbf"
+    exported = work / "features.geojsonseq"
+    shutil.copy2(pbf, staged)
+    try:
+        for extra in (filtered, exported):
+            extra.unlink(missing_ok=True)
+        run_command(
+            [
+                docker,
+                "run",
+                "--rm",
+                "-v",
+                f"{work}:/data",
+                OSMIUM_IMAGE,
+                "tags-filter",
+                "/data/input.osm.pbf",
+                *OSMIUM_FILTERS,
+                "-o",
+                "/data/features.filtered.osm.pbf",
+            ]
+        )
+        run_command(
+            [
+                docker,
+                "run",
+                "--rm",
+                "-v",
+                f"{work}:/data",
+                OSMIUM_IMAGE,
+                "export",
+                "-f",
+                "geojsonseq",
+                "-u",
+                "type_id",
+                "--geometry-types=point,polygon",
+                "/data/features.filtered.osm.pbf",
+                "-o",
+                "/data/features.geojsonseq",
+            ]
+        )
+        if exported.resolve() != export_path.resolve():
+            export_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(exported, export_path)
+    finally:
+        staged.unlink(missing_ok=True)
+        filtered.unlink(missing_ok=True)
+        if exported.resolve() != export_path.resolve():
+            exported.unlink(missing_ok=True)
+
+
+def export_filtered_features(pbf: Path, export_path: Path) -> None:
+    if shutil.which("osmium"):
+        _export_filtered_host(pbf, export_path)
+        return
+    try:
+        require_executable("docker")
+    except ToolError as exc:
+        raise ToolError(
+            "osmium is not installed. Install osmium or Docker, then rerun rockyroad-data build-places."
+        ) from exc
+    _export_filtered_docker(pbf, export_path)
 
 
 def build_places(pbf: Path | None = None, output_dir: Path | None = None) -> dict[str, Any]:
@@ -274,5 +366,5 @@ def build_places(pbf: Path | None = None, output_dir: Path | None = None) -> dic
     }
     for name in PARQUET_DATASETS:
         manifest["datasets"][name]["rows"] = len(buckets[name])
-    write_json_atomic(GEO_MANIFEST, manifest)
+    write_json_atomic(dest / "manifest.json", manifest)
     return manifest

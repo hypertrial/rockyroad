@@ -4,12 +4,38 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 
 class ToolError(RuntimeError):
     pass
+
+
+def docker_can_bind(path: Path) -> bool:
+    resolved = path.resolve()
+    if " " in str(resolved):
+        return False
+    try:
+        resolved.relative_to(Path.home().resolve())
+        return True
+    except ValueError:
+        return sys.platform.startswith("linux")
+
+
+def docker_stage_dir(dest: Path, *, env_var: str, cache_name: str) -> Path:
+    override = os.environ.get(env_var)
+    if override:
+        path = Path(override).expanduser()
+        path.mkdir(parents=True, exist_ok=True)
+        return path.resolve()
+    resolved = dest.resolve()
+    if docker_can_bind(resolved):
+        return resolved
+    path = Path.home() / ".cache" / "rockyroad" / cache_name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def require_executable(name: str) -> str:

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +19,7 @@ from rockyroad_data.paths import (
     ROUTING_DIR,
     ensure_data_dirs,
 )
-from rockyroad_data.process import ToolError, require_executable, run_command
+from rockyroad_data.process import ToolError, docker_stage_dir, require_executable, run_command
 
 VALHALLA_IMAGE = os.environ.get(
     "ROCKYROAD_VALHALLA_IMAGE",
@@ -47,29 +46,8 @@ def write_valhalla_config(routing_dir: Path, tile_dir: Path) -> Path:
     return config_path
 
 
-def docker_can_bind(path: Path) -> bool:
-    resolved = path.resolve()
-    if " " in str(resolved):
-        return False
-    try:
-        resolved.relative_to(Path.home().resolve())
-        return True
-    except ValueError:
-        return sys.platform.startswith("linux")
-
-
 def docker_files_dir(dest: Path) -> Path:
-    override = os.environ.get("ROCKYROAD_VALHALLA_FILES")
-    if override:
-        path = Path(override).expanduser()
-        path.mkdir(parents=True, exist_ok=True)
-        return path.resolve()
-    resolved = dest.resolve()
-    if docker_can_bind(resolved):
-        return resolved
-    path = Path.home() / ".cache" / "rockyroad" / "valhalla"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    return docker_stage_dir(dest, env_var="ROCKYROAD_VALHALLA_FILES", cache_name="valhalla")
 
 
 def _host_valhalla_tools() -> tuple[str, str] | None:

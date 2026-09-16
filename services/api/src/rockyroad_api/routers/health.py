@@ -27,7 +27,7 @@ def health(request: Request) -> HealthResponse:
     elif not routing_ok:
         detail = "Valhalla graph is missing. Run uv run rockyroad-data build-routing && docker compose up -d valhalla."
     elif not geo_ok:
-        detail = "Place datasets are missing. Run rockyroad-data build-places."
+        detail = "Place datasets are missing. Run uv run rockyroad-data build-places."
     return HealthResponse(
         status=status,
         duckdb=True,

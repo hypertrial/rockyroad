@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from rockyroad_data.process import ToolError
-from rockyroad_data.routing import VALHALLA_IMAGE, build_routing, docker_can_bind, docker_files_dir
+from rockyroad_data.process import ToolError, docker_can_bind
+from rockyroad_data.routing import VALHALLA_IMAGE, build_routing, docker_files_dir
 
 
 def test_docker_can_bind_rejects_spaces() -> None:
@@ -18,7 +18,7 @@ def test_docker_files_dir_stages_spaced_paths(tmp_path: Path, monkeypatch: pytes
     dest = tmp_path / "Mac SSD" / "valhalla"
     dest.mkdir(parents=True)
     monkeypatch.delenv("ROCKYROAD_VALHALLA_FILES", raising=False)
-    monkeypatch.setattr("rockyroad_data.routing.Path.home", lambda: home)
+    monkeypatch.setattr("rockyroad_data.process.Path.home", lambda: home)
     assert docker_files_dir(dest) == (home / ".cache" / "rockyroad" / "valhalla").resolve()
 
 

@@ -38,7 +38,7 @@ Keep generated PBF, PMTiles, graphs, Parquet, and DuckDB files out of Git.
 
 ## Host tools
 
-- `osmium` for merge, tag filter, and GeoJSONSeq export
+- `osmium` for multi-region merge. `build-places` uses host `osmium` when present and otherwise Docker (`iboates/osmium:1.19.0`). Sample `update-osm` still copies a single extract without osmium.
 - Java 21+ for Planetiler (`/usr/bin/java` on macOS is often 17; Homebrew `openjdk@21` is used if present). Place `planetiler.jar` (v0.9.0) in `tools/`. The first map build also needs Natural Earth, water polygons, and lake centerlines under `data/sources/` (copy them there, or run Planetiler once with `--download`). `build-map` itself does not fetch those files.
 - Valhalla tools (`valhalla_build_tiles` and `valhalla_build_extract`) or Docker. `build-routing` uses the host binaries when present and otherwise builds with `ghcr.io/valhalla/valhalla-scripted`.
 
@@ -102,5 +102,5 @@ If you publish a map produced from this pipeline, keep OSM attribution visible. 
 | `update-osm` rejects an extract | Path is not allow-listed | Add it under `config/regions.yaml` |
 | Blank map | Missing PMTiles | `build-map`, then confirm `/maps/north-america.pmtiles` |
 | Route 503 | Valhalla graph missing or service down | `build-routing`, then `docker compose up -d valhalla`. If the repo path has a space, set `ROCKYROAD_VALHALLA_FILES` to the path printed by `build-routing` |
-| Empty search | Parquet not imported | `build-places`, then restart API or `POST /api/admin/import-geo` |
+| Empty search | Parquet not imported | `uv run rockyroad-data build-places` (host osmium or Docker), then restart the API or `POST /api/admin/import-geo` |
 | DuckDB extension download | Image was built without `INSTALL spatial/fts` | Rebuild `infra/api/Dockerfile` |
