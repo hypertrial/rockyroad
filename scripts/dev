@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$root"
+
+if [[ ! -d .venv ]]; then
+  echo "Installing Python dependencies…"
+  uv sync --extra dev
+fi
+
+if [[ ! -d node_modules || ! -d apps/web/node_modules ]]; then
+  echo "Installing frontend dependencies…"
+  pnpm install
+fi
+
+if [[ ! -f .env && -f .env.example ]]; then
+  cp .env.example .env
+fi
+
+api_pid=""
+web_pid=""
+
+kill_tree() {
+  local pid="${1:-}"
+  if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+  pkill -P "$pid" 2>/dev/null || true
+  kill "$pid" 2>/dev/null || true
+}
+
+cleanup() {
+  trap - INT TERM EXIT
+  kill_tree "$web_pid"
+  kill_tree "$api_pid"
+  wait 2>/dev/null || true
+}
+
+trap cleanup INT TERM EXIT
+
+echo "Starting RockyRoad API on http://127.0.0.1:8000"
+uv run rockyroad-api &
+api_pid=$!
+
+echo "Starting RockyRoad web on http://127.0.0.1:5173"
+pnpm dev &
+web_pid=$!
+
+if ! curl -sf "http://127.0.0.1:8002/status" >/dev/null 2>&1; then
+  echo "Valhalla is not on :8002. Routes will fail until routing tiles are served."
+  echo "Build them with rockyroad-data build-routing, then start the valhalla Compose service."
+fi
+
+echo
+echo "RockyRoad is running."
+echo "  App  http://127.0.0.1:5173"
+echo "  API  http://127.0.0.1:8000/api/health"
+echo "  Maps http://127.0.0.1:8000/maps/north-america.pmtiles"
+echo
+
+wait "$api_pid" "$web_pid"

@@ -1,0 +1,35 @@
+# Allow-listed Geofabrik extracts. update-osm only fetches these paths.
+geofabrik_base: https://download.geofabrik.de
+default_profile: sample
+
+profiles:
+  sample:
+    description: Prince Edward Island — small Canada extract for local development
+    extracts:
+      - north-america/canada/prince-edward-island
+  canada-usa:
+    description: Full Canada + United States coverage
+    extracts:
+      - north-america/canada
+      - north-america/us
+
+# Feature-type priors used by search ranking after ETL.
+feature_priors:
+  city: 1.0
+  town: 0.78
+  village: 0.55
+  hamlet: 0.35
+  suburb: 0.42
+  neighbourhood: 0.3
+  isolated_dwelling: 0.15
+  park: 0.62
+  national_park: 0.82
+  nature_reserve: 0.7
+  campsite: 0.68
+  fuel: 0.5
+  attraction: 0.66
+  museum: 0.58
+  viewpoint: 0.6
+  historic: 0.52
+  boundary: 0.25
+  other: 0.2

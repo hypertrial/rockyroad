@@ -1,0 +1,56 @@
+{
+  "version": 8,
+  "name": "RockyRoad Offline",
+  "sources": {
+    "protomaps": {
+      "type": "vector",
+      "url": "pmtiles:///maps/north-america.pmtiles"
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": { "background-color": "#efe7d6" }
+    },
+    {
+      "id": "water",
+      "type": "fill",
+      "source": "protomaps",
+      "source-layer": "water",
+      "paint": { "fill-color": "#b9cfc9" }
+    },
+    {
+      "id": "park",
+      "type": "fill",
+      "source": "protomaps",
+      "source-layer": "landuse",
+      "filter": ["==", "class", "park"],
+      "paint": { "fill-color": "#c8d5b5" }
+    },
+    {
+      "id": "buildings",
+      "type": "fill",
+      "source": "protomaps",
+      "source-layer": "building",
+      "paint": { "fill-color": "#ddd2c0", "fill-opacity": 0.7 }
+    },
+    {
+      "id": "roads",
+      "type": "line",
+      "source": "protomaps",
+      "source-layer": "transportation",
+      "paint": {
+        "line-color": "#8c7b64",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.4, 12, 2.4]
+      }
+    },
+    {
+      "id": "boundaries",
+      "type": "line",
+      "source": "protomaps",
+      "source-layer": "boundary",
+      "paint": { "line-color": "#6b6256", "line-width": 0.8, "line-dasharray": [2, 2] }
+    }
+  ]
+}

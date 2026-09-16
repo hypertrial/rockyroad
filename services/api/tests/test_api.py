@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from rockyroad_api.models import Maneuver, RouteAlternative
+
+
+def test_health_and_trip_roundtrip(client: TestClient) -> None:
+    health = client.get("/api/health")
+    assert health.status_code == 200
+    assert health.json()["status"] == "degraded"
+    maps = client.get("/maps/north-america.pmtiles")
+    assert maps.status_code == 404
+    created = client.post("/api/trips", json={"name": "Cabot loop"})
+    assert created.status_code == 201
+    trip_id = created.json()["id"]
+    updated = client.put(
+        f"/api/trips/{trip_id}/stops",
+        json=[
+            {"name": "Charlottetown", "lon": -63.131, "lat": 46.238},
+            {"name": "Cavendish", "lon": -63.45, "lat": 46.49},
+        ],
+    )
+    assert updated.status_code == 200
+    assert len(updated.json()["stops"]) == 2
+
+
+def test_route_uses_valhalla_and_caches(client: TestClient) -> None:
+    created = client.post("/api/trips", json={"name": "Route me"})
+    trip_id = created.json()["id"]
+    client.put(
+        f"/api/trips/{trip_id}/stops",
+        json=[
+            {"name": "A", "lon": -63.131, "lat": 46.238},
+            {"name": "B", "lon": -63.79, "lat": 46.393},
+        ],
+    )
+    fake = RouteAlternative(
+        index=0,
+        distance_m=40000,
+        duration_s=2400,
+        geometry={"type": "LineString", "coordinates": [[-63.13, 46.24], [-63.79, 46.39]]},
+        maneuvers=[Maneuver(instruction="Head west", type=1, distance_m=40000, duration_s=2400)],
+    )
+    app = client.app
+    assert isinstance(app, FastAPI)
+    app.state.valhalla.request_route = MagicMock(return_value=[fake])
+    first = client.post(f"/api/trips/{trip_id}/route")
+    second = client.post(f"/api/trips/{trip_id}/route")
+    assert first.status_code == 200
+    assert first.json()["cache_hit"] is False
+    assert second.json()["cache_hit"] is True
+    assert app.state.valhalla.request_route.call_count == 1

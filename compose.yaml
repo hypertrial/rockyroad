@@ -1,0 +1,63 @@
+name: rockyroad
+
+services:
+  caddy:
+    image: caddy:2.10.0-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./apps/web/dist:/srv/web:ro
+      - ./apps/web/public:/srv/web/public:ro
+      - ./data/maps:/srv/maps:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/api/Dockerfile
+    environment:
+      ROCKYROAD_DUCKDB_PATH: /data/rockyroad.duckdb
+      ROCKYROAD_GEO_DIR: /data/geo
+      ROCKYROAD_MAPS_DIR: /data/maps
+      ROCKYROAD_ROUTING_DIR: /data/routing/valhalla
+      ROCKYROAD_API_HOST: 0.0.0.0
+      ROCKYROAD_API_PORT: 8000
+      VALHALLA_URL: http://valhalla:8002
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    restart: unless-stopped
+    networks:
+      - internal
+
+  valhalla:
+    image: ghcr.io/gisops/docker-valhalla/valhalla:latest
+    environment:
+      use_tiles_ignore_pbf: "True"
+      serve_tiles: "True"
+      build_tiles: "False"
+    volumes:
+      - ./data/routing/valhalla:/custom_files
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/status')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
