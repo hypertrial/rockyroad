@@ -13,6 +13,7 @@ def test_health_and_trip_roundtrip(client: TestClient) -> None:
     health = client.get("/api/health")
     assert health.status_code == 200
     assert health.json()["status"] == "degraded"
+    assert "bounds" in health.json()
     assert "update-osm --profile sample" in (health.json()["detail"] or "")
     maps = client.get("/maps/north-america.pmtiles")
     assert maps.status_code == 404

@@ -72,7 +72,7 @@ Restore by replacing the same paths and restarting Compose. Trip tables live onl
 ./scripts/dev
 ```
 
-That starts FastAPI on `:8000` and Vite on `:5173`. Vite proxies `/api` and `/maps` to the API, which serves `data/maps` with byte ranges. Routing still needs a graph plus Valhalla on `:8002`; `uv run rockyroad-data build-routing && docker compose up -d valhalla` builds the graph (host tools or Docker) and publishes the service on localhost for the host API. If the repo path contains a space, Docker Desktop cannot bind-mount `data/routing/valhalla`; `build-routing` stages tiles under `~/.cache/rockyroad/valhalla` and Compose should set `ROCKYROAD_VALHALLA_FILES` to that directory.
+That starts FastAPI on `:8000`, waits until `/api/health` responds, then starts Vite on `:5173`. Vite proxies `/api` and `/maps` to the API, which serves `data/maps` with byte ranges. `/api/health` includes extract `bounds` from the OSM profile so the planner can frame a sample PEI map instead of a blank continental view. Routing still needs a graph plus Valhalla on `:8002`; `uv run rockyroad-data build-routing && docker compose up -d valhalla` builds the graph (host tools or Docker) and publishes the service on localhost for the host API. If the repo path contains a space, Docker Desktop cannot bind-mount `data/routing/valhalla`; `build-routing` stages tiles under `~/.cache/rockyroad/valhalla` and Compose should set `ROCKYROAD_VALHALLA_FILES` to that directory.
 
 ## Offline verification
 

@@ -7,11 +7,13 @@ profiles:
     description: Prince Edward Island — small Canada extract for local development
     extracts:
       - north-america/canada/prince-edward-island
+    bounds: [-64.45, 45.90, -61.90, 47.10]
   canada-usa:
     description: Full Canada + United States coverage
     extracts:
       - north-america/canada
       - north-america/us
+    bounds: [-168.0, 24.0, -52.0, 83.5]
 
 # Feature-type priors used by search ranking after ETL.
 feature_priors:

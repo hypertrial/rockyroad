@@ -177,3 +177,4 @@ class HealthResponse(BaseModel):
     maps: bool
     data_version: str | None = None
     detail: str | None = None
+    bounds: list[float] | None = None

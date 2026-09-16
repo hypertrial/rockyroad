@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from rockyroad_data.regions import RegionConfigError, geofabrik_urls, load_regions, resolve_profile
+from rockyroad_data.regions import RegionConfigError, geofabrik_urls, load_regions, profile_bounds, resolve_profile
 
 
 def test_sample_profile_is_allow_listed() -> None:
@@ -12,6 +12,8 @@ def test_sample_profile_is_allow_listed() -> None:
     name, extracts = resolve_profile(config, "sample")
     assert name == "sample"
     assert extracts == ["north-america/canada/prince-edward-island"]
+    assert profile_bounds(config, "sample") == [-64.45, 45.90, -61.90, 47.10]
+    assert profile_bounds(config, "missing") is None
     url, md5 = geofabrik_urls(config, extracts[0])
     assert url.endswith("prince-edward-island-latest.osm.pbf")
     assert md5.endswith(".md5")

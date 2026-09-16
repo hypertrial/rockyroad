@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import maplibregl from "maplibre-gl";
 import { Protocol } from "pmtiles";
 import { useEffect, useRef } from "react";
 import { api } from "../lib/api";
+import { initialMapCamera } from "../lib/mapCamera";
 import { plannerMapStyle } from "../lib/mapStyle";
 import type { Trip } from "../lib/types";
 import { tripRoute } from "../router";
@@ -31,6 +32,8 @@ export function MapView({ trip, onAddStop }: Props) {
   const addStopRef = useRef(onAddStop);
   addStopRef.current = onAddStop;
   const navigate = useNavigate();
+  const search = useSearch({ from: "/trips/$tripId" });
+  const initialSearchRef = useRef(search);
   const selectedStopId = useUiStore((state) => state.selectedStopId);
   const setMapReady = useUiStore((state) => state.setMapReady);
   const setViewport = useUiStore((state) => state.setViewport);
@@ -41,11 +44,13 @@ export function MapView({ trip, onAddStop }: Props) {
   useEffect(() => {
     if (!containerRef.current || mapRef.current || health.isPending) return;
     if (mapsAvailable) ensurePmtilesProtocol();
+    const camera = initialMapCamera(initialSearchRef.current, health.data?.bounds ?? null);
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: plannerMapStyle(mapsAvailable),
-      center: [-96.5, 48.5],
-      zoom: 3.4,
+      ...(camera.kind === "center"
+        ? { center: camera.center, zoom: camera.zoom }
+        : { bounds: camera.bounds, fitBoundsOptions: { padding: 48, maxZoom: 11 } }),
       attributionControl: { compact: true },
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
@@ -82,7 +87,7 @@ export function MapView({ trip, onAddStop }: Props) {
       mapRef.current = null;
       setMapReady(false);
     };
-  }, [health.isPending, mapsAvailable, navigate, setMapReady, setViewport]);
+  }, [health.data?.bounds, health.isPending, mapsAvailable, navigate, setMapReady, setViewport]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -136,7 +141,7 @@ export function MapView({ trip, onAddStop }: Props) {
       {!mapsAvailable ? (
         <div className="map-banner">{health.data?.detail ?? "Local PMTiles are missing."}</div>
       ) : null}
-      <div className="map-legend">Click the map to drop a stop. Drag nothing to the cloud.</div>
+      <div className="map-legend">Click the map to drop a stop. Nothing is sent to the cloud.</div>
     </div>
   );
 }

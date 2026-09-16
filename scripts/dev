@@ -43,16 +43,27 @@ echo "Starting RockyRoad API on http://127.0.0.1:8000"
 uv run rockyroad-api &
 api_pid=$!
 
-echo "Starting RockyRoad web on http://127.0.0.1:5173"
-pnpm dev &
-web_pid=$!
-
-for _ in $(seq 1 40); do
+ready=0
+for _ in $(seq 1 80); do
+  if ! kill -0 "$api_pid" 2>/dev/null; then
+    echo "API process exited before it became ready."
+    exit 1
+  fi
   if curl -sf "http://127.0.0.1:8000/api/health" >/dev/null; then
+    ready=1
     break
   fi
   sleep 0.25
 done
+
+if [[ "$ready" -ne 1 ]]; then
+  echo "API did not become ready on http://127.0.0.1:8000/api/health"
+  exit 1
+fi
+
+echo "Starting RockyRoad web on http://127.0.0.1:5173"
+pnpm dev &
+web_pid=$!
 
 if ! curl -sf "http://127.0.0.1:8002/status" >/dev/null 2>&1; then
   echo "Valhalla is not on :8002. Routes will fail until routing tiles are served."

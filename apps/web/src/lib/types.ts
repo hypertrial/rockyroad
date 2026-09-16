@@ -98,6 +98,7 @@ export type HealthResponse = {
   maps: boolean;
   data_version: string | null;
   detail: string | null;
+  bounds: number[] | null;
 };
 
 export type PlannerSearch = {

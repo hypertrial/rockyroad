@@ -36,6 +36,26 @@ def allowed_extracts(config: dict[str, Any]) -> set[str]:
     return extracts
 
 
+def profile_bounds(config: dict[str, Any], profile_name: str | None) -> list[float] | None:
+    name = profile_name or str(config.get("default_profile") or "sample")
+    profiles = config.get("profiles")
+    if not isinstance(profiles, dict):
+        return None
+    profile = profiles.get(name)
+    if not isinstance(profile, dict):
+        return None
+    bounds = profile.get("bounds")
+    if not isinstance(bounds, list) or len(bounds) != 4:
+        return None
+    try:
+        west, south, east, north = (float(value) for value in bounds)
+    except (TypeError, ValueError):
+        return None
+    if west >= east or south >= north:
+        return None
+    return [west, south, east, north]
+
+
 def resolve_profile(config: dict[str, Any], profile_name: str | None) -> tuple[str, list[str]]:
     name = profile_name or str(config.get("default_profile") or "sample")
     profiles = config.get("profiles")
