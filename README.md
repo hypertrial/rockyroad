@@ -73,6 +73,8 @@ See [docs/data-build.md](docs/data-build.md) for hosted limits, local disk/RAM e
 
 ## Tests
 
+Development feedback: `scripts/verify-fast`. Completion: `scripts/verify`.
+
 ```bash
 uv run ruff check services/api
 uv run ruff format --check services/api
@@ -82,8 +84,11 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
-make compose-config
+docker compose config
+docker compose --profile local config
 ```
+
+`make compose-config` still accepts either `docker-compose` or `docker compose` if the Compose plugin is missing locally.
 
 ## License
 
