@@ -5,9 +5,18 @@ from typing import Annotated
 
 import typer
 
+from rockyroad_data.manifests import artifact_ready
 from rockyroad_data.maps import build_map
 from rockyroad_data.osm import update_osm
-from rockyroad_data.paths import GEO_MANIFEST, MAP_MANIFEST, OSM_MANIFEST, ROUTING_MANIFEST
+from rockyroad_data.paths import (
+    GEO_MANIFEST,
+    MAP_MANIFEST,
+    MERGED_PBF,
+    OSM_MANIFEST,
+    PARQUET_DATASETS,
+    PMTILES_PATH,
+    ROUTING_MANIFEST,
+)
 from rockyroad_data.places import build_places
 from rockyroad_data.routing import build_routing
 
@@ -54,13 +63,19 @@ def build_places_command() -> None:
 @app.command("status")
 def status_command() -> None:
     """Show which local artifacts exist."""
-    for label, path in (
-        ("osm", OSM_MANIFEST),
-        ("map", MAP_MANIFEST),
-        ("routing", ROUTING_MANIFEST),
-        ("geo", GEO_MANIFEST),
-    ):
-        typer.echo(f"{label}: {'ready' if path.exists() else 'missing'} ({path})")
+    artifacts = {
+        "osm": OSM_MANIFEST.is_file() and artifact_ready(MERGED_PBF),
+        "map": MAP_MANIFEST.is_file() and artifact_ready(PMTILES_PATH),
+        "routing": ROUTING_MANIFEST.is_file()
+        and (
+            artifact_ready(ROUTING_MANIFEST.parent / "valhalla_tiles.tar")
+            or artifact_ready(ROUTING_MANIFEST.parent / "valhalla_tiles")
+        ),
+        "geo": GEO_MANIFEST.is_file()
+        and all(artifact_ready(GEO_MANIFEST.parent / f"{name}.parquet") for name in PARQUET_DATASETS),
+    }
+    for label, ready in artifacts.items():
+        typer.echo(f"{label}: {'ready' if ready else 'missing'}")
 
 
 if __name__ == "__main__":

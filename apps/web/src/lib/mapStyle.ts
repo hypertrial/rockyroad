@@ -27,3 +27,14 @@ export function plannerMapStyle(health?: Pick<HealthResponse, "maps" | "provider
 export function usesLocalPmtiles(health?: Pick<HealthResponse, "maps" | "provider_mode"> | null) {
   return health?.provider_mode === "local" && health.maps === true;
 }
+
+export function mapLoadFailure(error: { status?: number; message?: string } | undefined): string | null {
+  if (!error || /sprite|glyph|image/i.test(error.message ?? "")) return null;
+  if (
+    (error.status !== undefined && error.status >= 400) ||
+    /\b4\d\d\b|\b5\d\d\b|failed to fetch|networkerror|load failed/i.test(error.message ?? "")
+  ) {
+    return "The map source is temporarily unavailable. Your trip data is still safe.";
+  }
+  return null;
+}

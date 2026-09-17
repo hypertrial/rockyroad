@@ -45,3 +45,11 @@ def artifact_record(path: Path, extra: dict[str, Any] | None = None) -> dict[str
     if extra:
         record.update(extra)
     return record
+
+
+def artifact_ready(path: Path) -> bool:
+    if path.is_file():
+        return path.stat().st_size > 0
+    if path.is_dir():
+        return any(child.is_file() and child.stat().st_size > 0 for child in path.rglob("*"))
+    return False

@@ -3,9 +3,14 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
+import httpx
+import pytest
+
 from rockyroad_api.models import StopOut, TripSettingsOut
 from rockyroad_api.polyline import decode_polyline
 from rockyroad_api.routing import (
+    RoutingError,
+    ValhallaClient,
     cache_key,
     parse_optimized_order,
     parse_valhalla,
@@ -141,3 +146,44 @@ def test_parse_optimized_order_uses_original_index() -> None:
     }
     assert parse_optimized_order(payload) == [0, 2, 1]
     assert parse_optimized_order({"trip": {}}) is None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "not-json",
+        {"trip": "not-an-object"},
+        {"trip": {"summary": {}, "shape": "_"}},
+        {"trip": {"summary": {}, "legs": "not-a-list"}},
+    ],
+    ids=["invalid-json", "invalid-trip", "truncated-shape", "invalid-legs"],
+)
+def test_valhalla_client_translates_malformed_success_response(tmp_path, body) -> None:
+    settings = Settings(
+        duckdb_path=tmp_path / "db",
+        geo_dir=tmp_path / "geo",
+        maps_dir=tmp_path / "maps",
+        osm_dir=tmp_path / "osm",
+        routing_dir=tmp_path / "routing",
+    )
+
+    def response(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=body) if isinstance(body, str) else httpx.Response(200, json=body)
+
+    client = httpx.Client(transport=httpx.MockTransport(response))
+    trip_settings = TripSettingsOut(
+        trip_id=uuid4(),
+        avoid_tolls=False,
+        avoid_highways=False,
+        avoid_ferries=False,
+        costing="auto",
+        optimize=False,
+        selected_alternative=0,
+        updated_at=datetime.now(),
+    )
+    with pytest.raises(RoutingError, match="unreadable") as exc:
+        ValhallaClient(settings, client).request_route(
+            [_stop("A", -63.1, 46.2, 0), _stop("B", -63.8, 46.4, 1)],
+            trip_settings,
+        )
+    assert exc.value.status_code == 502

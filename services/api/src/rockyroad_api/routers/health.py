@@ -11,6 +11,7 @@ from rockyroad_api.geo import (
     import_geo_if_changed,
 )
 from rockyroad_api.models import HealthResponse
+from rockyroad_data.manifests import artifact_ready
 
 router = APIRouter(tags=["health"])
 
@@ -48,11 +49,11 @@ def health(request: Request) -> HealthResponse:
             search_provider="photon",
         )
 
-    maps_ok = (settings.maps_dir / "north-america.pmtiles").exists()
-    routing_ok = (settings.routing_dir / "manifest.json").exists() or (
-        settings.routing_dir / "valhalla_tiles.tar"
-    ).exists()
-    geo_ok = current_geo_version(db) is not None or (settings.geo_dir / "manifest.json").exists()
+    maps_ok = artifact_ready(settings.maps_dir / "north-america.pmtiles")
+    routing_ok = artifact_ready(settings.routing_dir / "valhalla_tiles.tar") or artifact_ready(
+        settings.routing_dir / "valhalla_tiles"
+    )
+    geo_ok = current_geo_version(db) is not None
     status = "ok" if geo_ok and maps_ok and routing_ok else "degraded"
     detail = None
     if not maps_ok:

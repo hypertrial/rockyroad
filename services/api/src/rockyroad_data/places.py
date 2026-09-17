@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -102,6 +103,39 @@ def dataset_for(feature_kind: str) -> str:
     return "places"
 
 
+def _ring_points(raw: Any) -> list[tuple[float, float]]:
+    if not isinstance(raw, list):
+        return []
+    points = [(float(item[0]), float(item[1])) for item in raw if isinstance(item, list) and len(item) >= 2]
+    return points if len(points) >= 3 else []
+
+
+def _scanline_point(rings: list[list[tuple[float, float]]]) -> tuple[float, float] | None:
+    ys = [y for ring in rings for _, y in ring]
+    south, north = min(ys), max(ys)
+    if south == north:
+        return None
+    candidates = [south + (north - south) * (index + 0.5) / 32 for index in range(32)]
+    best: tuple[float, tuple[float, float]] | None = None
+    for y in candidates:
+        intersections: list[float] = []
+        for ring in rings:
+            for (x1, y1), (x2, y2) in zip(ring, [*ring[1:], ring[0]], strict=True):
+                if (y1 > y) != (y2 > y):
+                    intersections.append(x1 + (y - y1) * (x2 - x1) / (y2 - y1))
+        intersections.sort()
+        for left, right in zip(intersections[::2], intersections[1::2], strict=False):
+            point = ((left + right) / 2, y)
+            width = right - left
+            if width > 0 and (best is None or width > best[0]):
+                best = (width, point)
+    return best[1] if best else None
+
+
+def _polygon_area(ring: list[tuple[float, float]]) -> float:
+    return abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(ring, [*ring[1:], ring[0]], strict=True))) / 2
+
+
 def centroid(geometry: dict[str, Any] | None) -> tuple[float, float] | None:
     if not geometry:
         return None
@@ -109,23 +143,18 @@ def centroid(geometry: dict[str, Any] | None) -> tuple[float, float] | None:
     coords = geometry.get("coordinates")
     if geom_type == "Point" and isinstance(coords, list) and len(coords) >= 2:
         return float(coords[0]), float(coords[1])
-    ring: list[Any] | None = None
-    if geom_type == "Polygon" and isinstance(coords, list) and coords:
-        ring = coords[0] if isinstance(coords[0], list) else None
-    elif geom_type == "MultiPolygon" and isinstance(coords, list) and coords:
-        first = coords[0]
-        ring = first[0] if isinstance(first, list) and first else None
-    if not ring:
+    polygons: list[Any] = []
+    if geom_type == "Polygon" and isinstance(coords, list):
+        polygons = [coords]
+    elif geom_type == "MultiPolygon" and isinstance(coords, list):
+        polygons = coords
+    parsed = [[_ring_points(ring) for ring in polygon] for polygon in polygons if isinstance(polygon, list)]
+    valid = [[ring for ring in polygon if ring] for polygon in parsed]
+    valid = [polygon for polygon in valid if polygon]
+    if not valid:
         return None
-    xs: list[float] = []
-    ys: list[float] = []
-    for pair in ring:
-        if isinstance(pair, list) and len(pair) >= 2:
-            xs.append(float(pair[0]))
-            ys.append(float(pair[1]))
-    if not xs:
-        return None
-    return sum(xs) / len(xs), sum(ys) / len(ys)
+    rings = max(valid, key=lambda polygon: _polygon_area(polygon[0]))
+    return _scanline_point(rings) or rings[0][0]
 
 
 def aliases(props: dict[str, Any]) -> str:
@@ -362,7 +391,9 @@ def build_places(pbf: Path | None = None, output_dir: Path | None = None) -> dic
         "source_pbf": artifact_record(source),
         "osm_version": osm_manifest.get("version"),
         "datasets": {name: artifact_record(path, {"rows": len(buckets[name])}) for name, path in written.items()},
-        "version": file_sha256(written["places"])[:16],
+        "version": hashlib.sha256(
+            "".join(file_sha256(written[name]) for name in PARQUET_DATASETS).encode("utf-8")
+        ).hexdigest()[:16],
     }
     for name in PARQUET_DATASETS:
         manifest["datasets"][name]["rows"] = len(buckets[name])

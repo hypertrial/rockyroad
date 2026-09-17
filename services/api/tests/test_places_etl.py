@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+import time
 from pathlib import Path
 
 import pytest
@@ -7,6 +9,7 @@ import pytest
 from rockyroad_data.places import (
     OSMIUM_IMAGE,
     build_places,
+    centroid,
     dataset_for,
     feature_type,
     normalize_name,
@@ -20,6 +23,54 @@ def test_feature_classification() -> None:
     assert feature_type({"tourism": "camp_site"}) == "campsite"
     assert dataset_for("fuel") == "fuel"
     assert normalize_name("  Charlottetown ") == "charlottetown"
+
+
+def test_polygon_representative_points_stay_inside_concave_and_holed_shapes() -> None:
+    concave = {
+        "type": "Polygon",
+        "coordinates": [[[0, 0], [4, 0], [4, 4], [3, 4], [3, 1], [1, 1], [1, 4], [0, 4], [0, 0]]],
+    }
+    holed = {
+        "type": "Polygon",
+        "coordinates": [
+            [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]],
+            [[4, 4], [6, 4], [6, 6], [4, 6], [4, 4]],
+        ],
+    }
+    concave_point = centroid(concave)
+    holed_point = centroid(holed)
+    assert concave_point is not None
+    assert concave_point[1] <= 1 or concave_point[0] <= 1 or concave_point[0] >= 3
+    assert holed_point is not None
+    assert 0 <= holed_point[0] <= 10 and 0 <= holed_point[1] <= 10
+    assert not (4 < holed_point[0] < 6 and 4 < holed_point[1] < 6)
+
+
+def test_multipolygon_uses_the_largest_polygon() -> None:
+    point = centroid(
+        {
+            "type": "MultiPolygon",
+            "coordinates": [
+                [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
+                [[[10, 10], [20, 10], [20, 20], [10, 20], [10, 10]]],
+            ],
+        }
+    )
+    assert point is not None
+    assert 10 <= point[0] <= 20 and 10 <= point[1] <= 20
+
+
+def test_polygon_representative_point_is_bounded_for_large_boundaries() -> None:
+    ring = []
+    for index in range(800):
+        angle = 2 * math.pi * index / 800
+        radius = 10 if index % 2 == 0 else 4
+        ring.append([radius * math.cos(angle), radius * math.sin(angle)])
+    ring.append(ring[0])
+    started = time.monotonic()
+    point = centroid({"type": "Polygon", "coordinates": [ring]})
+    assert time.monotonic() - started < 2
+    assert point is not None
 
 
 def test_rows_from_geojsonseq(tmp_path) -> None:
@@ -108,6 +159,31 @@ def test_build_places_prefers_host_osmium(tmp_path: Path, monkeypatch: pytest.Mo
     build_places(pbf=source, output_dir=dest)
     assert commands[0][0] == "/usr/bin/osmium"
     assert all(args[0] != "docker" for args in commands)
+
+
+def test_build_places_version_covers_non_place_datasets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "source.osm.pbf"
+    source.write_bytes(b"pbf")
+    dest = tmp_path / "geo"
+    park_lon = -63.2
+
+    def fake_export(_source: Path, output: Path) -> None:
+        output.write_text(
+            '{"type":"Feature","id":"node/1","properties":{"name":"Town","place":"city"},'
+            '"geometry":{"type":"Point","coordinates":[-63.13,46.24]}}\n'
+            f'{{"type":"Feature","id":"way/2","properties":{{"name":"Park","leisure":"park"}},'
+            f'"geometry":{{"type":"Point","coordinates":[{park_lon},46.3]}}}}\n',
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("rockyroad_data.places.ensure_data_dirs", lambda: None)
+    monkeypatch.setattr("rockyroad_data.places.export_filtered_features", fake_export)
+    first = build_places(pbf=source, output_dir=dest)
+    park_lon = -63.4
+    second = build_places(pbf=source, output_dir=dest)
+    assert first["datasets"]["places"]["sha256"] == second["datasets"]["places"]["sha256"]
+    assert first["datasets"]["parks"]["sha256"] != second["datasets"]["parks"]["sha256"]
+    assert first["version"] != second["version"]
 
 
 def test_build_places_requires_osmium_or_docker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

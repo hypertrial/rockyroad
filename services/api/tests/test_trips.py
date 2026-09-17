@@ -1,16 +1,29 @@
 from __future__ import annotations
 
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from uuid import uuid4
 
 import pytest
 
 from rockyroad_api.db import Database
-from rockyroad_api.models import StopIn, TripCreate, TripSettingsIn, TripUpdate
-from rockyroad_api.routing import RoutingError
+from rockyroad_api.models import (
+    Maneuver,
+    RouteAlternative,
+    StopIn,
+    StopOut,
+    TripCreate,
+    TripSettingsIn,
+    TripSettingsOut,
+    TripUpdate,
+)
+from rockyroad_api.routing import RouteComputation, RoutingError
 from rockyroad_api.trips import (
     apply_optimized_order,
     create_trip,
     delete_trip,
+    get_trip,
     list_trips,
     replace_stops,
     route_trip,
@@ -121,3 +134,62 @@ def test_settings_and_delete(db: Database) -> None:
     assert updated.settings.avoid_tolls is True
     assert delete_trip(db, trip.id) is True
     assert list_trips(db) == []
+
+
+def test_route_rejects_stale_optimized_result_without_overwriting_stops(db: Database) -> None:
+    trip = create_trip(
+        db,
+        TripCreate(
+            name="Race",
+            stops=[CHARLOTTETOWN, SUMMERSIDE, StopIn(name="Cavendish", lon=-63.45, lat=46.49)],
+            settings=TripSettingsIn(optimize=True),
+        ),
+    )
+    started = threading.Event()
+    release = threading.Event()
+    alternative = RouteAlternative(
+        index=0,
+        distance_m=1_000,
+        duration_s=100,
+        geometry={"type": "LineString", "coordinates": [[-63.13, 46.24], [-63.79, 46.39]]},
+        maneuvers=[Maneuver(instruction="Go", distance_m=1_000, duration_s=100)],
+    )
+
+    class BlockingProvider:
+        def request_route(self, stops: list[StopOut], settings: TripSettingsOut) -> RouteComputation:
+            assert stops and settings.optimize
+            started.set()
+            assert release.wait(timeout=5)
+            return RouteComputation(alternatives=[alternative], optimized_order=[0, 2, 1])
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        future = pool.submit(route_trip, db, BlockingProvider(), trip.id)
+        assert started.wait(timeout=5)
+        replacement = StopIn(id=uuid4(), name="New stop", lon=-63.3, lat=46.3)
+        updated = replace_stops(db, trip.id, [CHARLOTTETOWN, replacement, SUMMERSIDE])
+        assert updated is not None
+        release.set()
+        with pytest.raises(RoutingError, match="trip changed") as exc:
+            future.result(timeout=5)
+
+    assert exc.value.status_code == 409
+    current = get_trip(db, trip.id)
+    assert current is not None
+    assert [stop.name for stop in current.stops] == ["Charlottetown", "New stop", "Summerside"]
+
+
+def test_replace_stops_rejects_duplicate_ids_before_writing(db: Database) -> None:
+    trip = create_trip(db, TripCreate(name="Duplicates", stops=[CHARLOTTETOWN, SUMMERSIDE]))
+    duplicate = uuid4()
+    with pytest.raises(ValueError, match="unique"):
+        replace_stops(
+            db,
+            trip.id,
+            [
+                StopIn(id=duplicate, name="A", lon=-63.13, lat=46.24),
+                StopIn(id=duplicate, name="B", lon=-63.79, lat=46.39),
+            ],
+        )
+    current = get_trip(db, trip.id)
+    assert current is not None
+    assert [stop.name for stop in current.stops] == ["Charlottetown", "Summerside"]

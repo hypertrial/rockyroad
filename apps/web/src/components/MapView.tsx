@@ -5,11 +5,11 @@ import * as maplibregl from "maplibre-gl";
 import { Protocol } from "pmtiles";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
-import { coverageHint, initialMapCamera } from "../lib/mapCamera";
+import { coverageHint, hasExplicitCamera, initialMapCamera } from "../lib/mapCamera";
 import { commitMapPoint, coverageDropHint } from "../lib/mapInteraction";
 import { syncTripRouteLayer, type RouteMap } from "../lib/mapRouteLayer";
-import { plannerMapStyle, usesLocalPmtiles } from "../lib/mapStyle";
-import type { PlannerSearch, Trip, ViewportBounds } from "../lib/types";
+import { mapLoadFailure, plannerMapStyle, usesLocalPmtiles } from "../lib/mapStyle";
+import type { Trip, ViewportBounds } from "../lib/types";
 import { tripRoute } from "../router";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -20,10 +20,6 @@ function ensurePmtilesProtocol() {
   const protocol = new Protocol();
   maplibregl.addProtocol("pmtiles", protocol.tile);
   protocolRegistered = true;
-}
-
-function hasExplicitCamera(search: PlannerSearch): boolean {
-  return search.lat !== undefined && search.lng !== undefined && search.z !== undefined;
 }
 
 function fitCoordinates(map: maplibregl.Map, coordinates: number[][]) {
@@ -144,9 +140,8 @@ export function MapView({
     });
     map.on("error", (event) => {
       const error = event.error as { status?: number; message?: string } | undefined;
-      if (error?.status === 404 || error?.message?.includes("404")) {
-        setClickHint("The map source is temporarily unavailable. Your trip data is still safe.");
-      }
+      const message = mapLoadFailure(error);
+      if (message) setClickHint(message);
     });
     map.on("click", (event) => {
       if (draggingStopIdRef.current || suppressMapClickRef.current || writeLockedRef.current) return;

@@ -21,6 +21,14 @@ describe("initialMapCamera", () => {
       zoom: CONTINENT_ZOOM,
     });
   });
+
+  it("falls back instead of forwarding an invalid camera", () => {
+    expect(initialMapCamera({ lat: 999, lng: -63, z: 7 }, null)).toEqual({
+      kind: "center",
+      center: CONTINENT_CENTER,
+      zoom: CONTINENT_ZOOM,
+    });
+  });
 });
 
 describe("pointInExtract", () => {

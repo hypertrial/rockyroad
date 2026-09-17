@@ -9,7 +9,7 @@ import httpx
 from rockyroad_data.manifests import artifact_record, file_sha256, utc_now, write_json_atomic
 from rockyroad_data.paths import MERGED_PBF, OSM_DIR, OSM_MANIFEST, ensure_data_dirs
 from rockyroad_data.process import require_executable, run_command
-from rockyroad_data.regions import geofabrik_urls, load_regions, resolve_profile
+from rockyroad_data.regions import geofabrik_urls, load_regions, profile_bounds, resolve_profile
 
 
 def extract_filename(extract: str) -> str:
@@ -98,6 +98,7 @@ def update_osm(profile_name: str | None = None, regions_path: Path | None = None
     manifest = {
         "created_at": utc_now(),
         "profile": name,
+        "bounds": profile_bounds(config, name),
         "extracts": extract_records,
         "merged": artifact_record(MERGED_PBF),
         "version": file_sha256(MERGED_PBF)[:16],

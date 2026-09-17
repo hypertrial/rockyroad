@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_MAP_STYLE, LOCAL_TILE_STYLE, OPENFREEMAP_STYLE, plannerMapStyle, usesLocalPmtiles } from "./mapStyle";
+import {
+  EMPTY_MAP_STYLE,
+  LOCAL_TILE_STYLE,
+  OPENFREEMAP_STYLE,
+  mapLoadFailure,
+  plannerMapStyle,
+  usesLocalPmtiles,
+} from "./mapStyle";
 
 describe("plannerMapStyle", () => {
   it("skips PMTiles when the local basemap is missing", () => {
@@ -25,5 +32,17 @@ describe("plannerMapStyle", () => {
     ).toBe(OPENFREEMAP_STYLE);
     expect(usesLocalPmtiles({ maps: true, provider_mode: "hosted" })).toBe(false);
     expect(usesLocalPmtiles({ maps: true, provider_mode: "local" })).toBe(true);
+  });
+});
+
+describe("mapLoadFailure", () => {
+  it("reports fatal HTTP and network failures", () => {
+    expect(mapLoadFailure({ status: 500 })).toMatch(/temporarily unavailable/);
+    expect(mapLoadFailure({ message: "Failed to fetch style" })).toMatch(/temporarily unavailable/);
+  });
+
+  it("ignores noncritical resource and unrelated errors", () => {
+    expect(mapLoadFailure({ status: 404, message: "Missing sprite image" })).toBeNull();
+    expect(mapLoadFailure({ message: "WebGL warning" })).toBeNull();
   });
 });

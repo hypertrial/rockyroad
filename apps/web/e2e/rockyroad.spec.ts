@@ -177,6 +177,16 @@ test("phone planner keeps every map control clear of the expanded sheet", async 
   await expectPlannerLockedToViewport(page);
 });
 
+test("planner survives invalid camera links and explains fatal map failures", async ({ page }) => {
+  expectedResourceErrors = 1;
+  await mockRockyRoad(page, { mapStyleStatus: 500 });
+  await page.goto("/trips/trip-1?lat=999&lng=-63&z=7");
+
+  await expect(page.getByRole("region", { name: "Interactive trip map" })).toBeVisible();
+  await expect(page.locator(".map-banner")).toContainText("map source is temporarily unavailable");
+  expect(browserErrors.some((message) => message.includes("Invalid LngLat"))).toBe(false);
+});
+
 test("desktop planner saves titles, exposes route failures, and keeps keyboard focus visible", async ({ page }) => {
   expectedResourceErrors = 1;
   await page.setViewportSize({ width: 1280, height: 720 });

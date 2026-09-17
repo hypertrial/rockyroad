@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -12,7 +13,7 @@ from rockyroad_api.main import create_app
 from rockyroad_api.models import Maneuver, RouteAlternative
 from rockyroad_api.ors import OpenRouteServiceClient
 from rockyroad_api.photon import PhotonSearch
-from rockyroad_api.routing import RouteComputation, ValhallaClient
+from rockyroad_api.routing import RouteComputation, RoutingError, ValhallaClient
 from rockyroad_api.search import LocalPlaceSearch
 from rockyroad_api.settings import Settings
 
@@ -53,6 +54,30 @@ def test_health_bounds_absent_without_osm_manifest(settings: Settings) -> None:
     with TestClient(create_app(settings)) as client:
         payload = client.get("/api/health").json()
     assert payload["bounds"] is None
+
+
+def test_app_does_not_write_to_a_missing_read_only_maps_directory(settings: Settings, tmp_path) -> None:
+    parent = tmp_path / "read-only-data"
+    parent.mkdir()
+    parent.chmod(0o555)
+    maps_dir = parent / "maps"
+    try:
+        with TestClient(create_app(settings.model_copy(update={"maps_dir": maps_dir}))) as client:
+            assert client.get("/maps/missing.pmtiles").status_code == 404
+        assert not maps_dir.exists()
+    finally:
+        parent.chmod(0o755)
+
+
+def test_health_does_not_treat_geo_manifest_as_imported_data(settings: Settings) -> None:
+    (settings.geo_dir / "manifest.json").write_text('{"version":"incomplete"}', encoding="utf-8")
+    (settings.maps_dir / "north-america.pmtiles").write_bytes(b"map")
+    (settings.routing_dir / "valhalla_tiles.tar").write_bytes(b"tiles")
+    with TestClient(create_app(settings)) as client:
+        payload = client.get("/api/health").json()
+    assert payload["status"] == "degraded"
+    assert payload["geo"] is False
+    assert payload["data_version"] is None
 
 
 def test_route_uses_valhalla_and_caches(client: TestClient) -> None:
@@ -115,6 +140,55 @@ def test_optimize_persists_valhalla_stop_order(client: TestClient) -> None:
     assert trip["route"] is not None
     assert trip["route"]["cache_hit"] is True
     assert trip["route"]["alternatives"][0]["distance_m"] == 50000
+
+
+def test_failed_optimize_preserves_settings_and_cached_route(client: TestClient) -> None:
+    trip_id = client.post("/api/trips", json={"name": "Keep route"}).json()["id"]
+    client.put(
+        f"/api/trips/{trip_id}/stops",
+        json=[
+            {"name": "A", "lon": -63.131, "lat": 46.238},
+            {"name": "B", "lon": -63.79, "lat": 46.393},
+        ],
+    )
+    fake = RouteAlternative(
+        index=0,
+        distance_m=40000,
+        duration_s=2400,
+        geometry={"type": "LineString", "coordinates": [[-63.13, 46.24], [-63.79, 46.39]]},
+        maneuvers=[Maneuver(instruction="Head west", type=1, distance_m=40000, duration_s=2400)],
+    )
+    app = client.app
+    assert isinstance(app, FastAPI)
+    app.state.routing.request_route = MagicMock(return_value=RouteComputation(alternatives=[fake]))
+    assert client.post(f"/api/trips/{trip_id}/route").status_code == 200
+    app.state.routing.request_route = MagicMock(side_effect=RoutingError("provider unavailable", status_code=503))
+
+    response = client.post(f"/api/trips/{trip_id}/optimize")
+    trip = client.get(f"/api/trips/{trip_id}").json()
+
+    assert response.status_code == 503
+    assert trip["settings"]["optimize"] is False
+    assert trip["route"] is not None
+
+
+def test_duplicate_stop_ids_return_validation_error(client: TestClient) -> None:
+    duplicate = str(uuid4())
+    duplicate_stops = [
+        {"id": duplicate, "name": "A", "lon": -63.131, "lat": 46.238},
+        {"id": duplicate, "name": "B", "lon": -63.79, "lat": 46.393},
+    ]
+    created = client.post("/api/trips", json={"name": "Duplicates", "stops": duplicate_stops})
+    assert created.status_code == 422
+    assert "unique" in created.json()["detail"]
+
+    trip_id = client.post("/api/trips", json={"name": "Duplicates"}).json()["id"]
+    response = client.put(
+        f"/api/trips/{trip_id}/stops",
+        json=duplicate_stops,
+    )
+    assert response.status_code == 422
+    assert "unique" in response.json()["detail"]
 
 
 def test_route_rejects_stops_outside_sample_extract(client: TestClient, settings: Settings) -> None:

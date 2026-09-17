@@ -23,6 +23,7 @@ from rockyroad_api.trips import (
     get_trip,
     list_saved_places,
     list_trips,
+    optimize_trip,
     replace_stops,
     route_trip,
     update_trip,
@@ -88,16 +89,8 @@ def trips_route(request: Request, trip_id: UUID) -> RouteResponse:
 
 @router.post("/trips/{trip_id}/optimize", response_model=RouteResponse)
 def trips_optimize(request: Request, trip_id: UUID) -> RouteResponse:
-    trip = get_trip(request.app.state.db, trip_id)
-    if trip is None:
-        raise HTTPException(status_code=404, detail="trip not found")
-    update_trip(
-        request.app.state.db,
-        trip_id,
-        TripUpdate(settings=trip.settings.model_copy(update={"optimize": True})),
-    )
     try:
-        return route_trip(request.app.state.db, request.app.state.routing, trip_id)
+        return optimize_trip(request.app.state.db, request.app.state.routing, trip_id)
     except RoutingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 

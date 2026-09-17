@@ -21,6 +21,17 @@ describe("validatePlannerSearch", () => {
   });
 
   it("drops invalid values", () => {
-    expect(validatePlannerSearch({ lat: "nope", panel: "satellite", z: "NaN" })).toEqual({});
+    expect(
+      validatePlannerSearch({ lat: "999", lng: "-181", panel: "satellite", z: "23" }),
+    ).toEqual({});
+    expect(validatePlannerSearch({ lat: "nope", z: "NaN" })).toEqual({});
+  });
+
+  it("keeps camera boundary values", () => {
+    expect(validatePlannerSearch({ lat: "-90", lng: "180", z: "22" })).toEqual({
+      lat: -90,
+      lng: 180,
+      z: 22,
+    });
   });
 });

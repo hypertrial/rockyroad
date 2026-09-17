@@ -27,6 +27,16 @@ def extract_profile(osm_dir: Path) -> str | None:
 
 
 def extract_bounds(osm_dir: Path) -> list[float] | None:
+    manifest = read_json(osm_dir / "manifest.json")
+    bounds = manifest.get("bounds")
+    if isinstance(bounds, list) and len(bounds) == 4:
+        try:
+            west, south, east, north = (float(value) for value in bounds)
+        except (TypeError, ValueError):
+            pass
+        else:
+            if west < east and south < north:
+                return [west, south, east, north]
     profile = extract_profile(osm_dir)
     if not profile:
         return None

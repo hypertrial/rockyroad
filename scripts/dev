@@ -72,11 +72,13 @@ echo "Starting RockyRoad web on http://127.0.0.1:5173"
 pnpm dev &
 web_pid=$!
 
-provider_mode="hosted"
-if [[ -f .env ]]; then
+provider_mode=""
+if [[ "${ROCKYROAD_PROVIDER_MODE+x}" == "x" ]]; then
+  provider_mode="$ROCKYROAD_PROVIDER_MODE"
+elif [[ -f .env ]]; then
   provider_mode="$(awk -F= '/^ROCKYROAD_PROVIDER_MODE=/{value=$2} END{print value}' .env | tr -d '[:space:]' | tr -d "\"'")"
-  provider_mode="${provider_mode:-hosted}"
 fi
+provider_mode="${provider_mode:-hosted}"
 
 if [[ "$provider_mode" == "local" ]]; then
   if ! curl -sf "http://127.0.0.1:8002/status" >/dev/null 2>&1; then
@@ -105,7 +107,9 @@ if [[ "$provider_mode" == "local" ]]; then
   fi
 else
   ors_key=""
-  if [[ -f .env ]]; then
+  if [[ "${ROCKYROAD_ORS_API_KEY+x}" == "x" ]]; then
+    ors_key="$ROCKYROAD_ORS_API_KEY"
+  elif [[ -f .env ]]; then
     ors_key="$(awk -F= '/^ROCKYROAD_ORS_API_KEY=/{value=$2} END{print value}' .env | tr -d '[:space:]' | tr -d "\"'")"
   fi
   if [[ -z "$ors_key" ]]; then

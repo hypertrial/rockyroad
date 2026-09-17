@@ -30,6 +30,7 @@ export function SearchBox({ onSelect, health, viewport, disabled = false, editin
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebouncedValue(query, 300);
   const hosted = health?.provider_mode === "hosted";
+  const hasActiveQuery = query.trim().length >= 2;
   const search = useQuery({
     queryKey: ["search", debouncedQuery, viewport],
     queryFn: () => api.search(debouncedQuery, viewport ?? undefined),
@@ -40,6 +41,8 @@ export function SearchBox({ onSelect, health, viewport, disabled = false, editin
 
   const errorMessage = search.error instanceof Error ? search.error.message : "";
   const quota = /quota|rate limit/i.test(errorMessage);
+  const queryReady = hasActiveQuery && query.trim() === debouncedQuery.trim();
+  const showResults = queryReady && !search.isPlaceholderData;
 
   return (
     <section className="planner-tool" aria-labelledby="search-heading">
@@ -68,7 +71,7 @@ export function SearchBox({ onSelect, health, viewport, disabled = false, editin
         ) : null}
       </div>
       <div className="search-results" aria-live="polite">
-        {search.data?.results.map((place) => (
+        {showResults ? search.data?.results.map((place) => (
           <button key={place.id} type="button" disabled={disabled} onClick={() => void onSelect(place)}>
             <span className="search-result-copy">
               <strong>{place.name}</strong>
@@ -78,8 +81,8 @@ export function SearchBox({ onSelect, health, viewport, disabled = false, editin
               {place.lat.toFixed(2)}, {place.lon.toFixed(2)}
             </span>
           </button>
-        ))}
-        {search.isFetching ? (
+        )) : null}
+        {queryReady && search.isFetching ? (
           <div className="search-loading" role="status">
             <span className="search-loading-label">
               <LoaderCircle className="spin" aria-hidden="true" size={18} />
@@ -92,13 +95,13 @@ export function SearchBox({ onSelect, health, viewport, disabled = false, editin
           </div>
         ) : null}
         {!query.trim() ? <p className="search-prompt">Try a city, park, campground, viewpoint, or fuel stop.</p> : null}
-        {search.data && search.data.results.length === 0 && !search.isFetching ? (
+        {showResults && search.data && search.data.results.length === 0 && !search.isFetching ? (
           <div className="search-empty">
             <strong>No places found</strong>
             <span>{hosted ? "Try a broader name or move the map closer." : "Try another name within your downloaded region."}</span>
           </div>
         ) : null}
-        {search.error ? (
+        {queryReady && search.error ? (
           <StatusNotice variant="error" actionLabel="Try again" onAction={() => void search.refetch()}>
             {quota
               ? "Search quota or rate limit reached. Try again in a minute."

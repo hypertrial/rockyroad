@@ -55,12 +55,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!response.ok) {
-    let detail = response.statusText;
+    const body = await response.text();
+    let detail = body || response.statusText;
     try {
-      const payload = (await response.json()) as { detail?: unknown };
+      const payload = JSON.parse(body) as { detail?: unknown };
       detail = formatApiErrorDetail(payload.detail) ?? detail;
     } catch {
-      detail = await response.text();
+      // Plain-text and HTML errors are already useful as-is.
     }
     throw new Error(detail || `Request failed: ${response.status}`);
   }

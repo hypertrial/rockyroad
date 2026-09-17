@@ -64,15 +64,25 @@ describe("api errors", () => {
   it("throws a readable message for FastAPI 422 lists", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: false,
-        status: 422,
-        statusText: "Unprocessable Entity",
-        json: async () => ({
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
           detail: [{ loc: ["body", "name"], msg: "String should have at least 1 character", type: "string_too_short" }],
-        }),
-      }),
+          }),
+          { status: 422, statusText: "Unprocessable Entity" },
+        ),
+      ),
     );
     await expect(api.createTrip("")).rejects.toThrow("String should have at least 1 character");
+  });
+
+  it("preserves plain-text and status-only proxy errors", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("upstream unavailable", { status: 502, statusText: "Bad Gateway" }))
+      .mockResolvedValueOnce(new Response("", { status: 504, statusText: "Gateway Timeout" }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(api.health()).rejects.toThrow("upstream unavailable");
+    await expect(api.health()).rejects.toThrow("Gateway Timeout");
   });
 });

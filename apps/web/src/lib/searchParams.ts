@@ -1,9 +1,9 @@
 import type { PlannerSearch } from "./types";
 
 export function validatePlannerSearch(raw: Record<string, unknown>): PlannerSearch {
-  const lat = toNumber(raw.lat);
-  const lng = toNumber(raw.lng);
-  const z = toNumber(raw.z);
+  const lat = toNumber(raw.lat, -90, 90);
+  const lng = toNumber(raw.lng, -180, 180);
+  const z = toNumber(raw.z, 0, 22);
   const stop = typeof raw.stop === "string" ? raw.stop : undefined;
   const panel = isPanel(raw.panel) ? raw.panel : undefined;
   return {
@@ -15,9 +15,9 @@ export function validatePlannerSearch(raw: Record<string, unknown>): PlannerSear
   };
 }
 
-function toNumber(value: unknown): number | undefined {
+function toNumber(value: unknown, minimum: number, maximum: number): number | undefined {
   const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
-  return Number.isFinite(parsed) ? parsed : undefined;
+  return Number.isFinite(parsed) && parsed >= minimum && parsed <= maximum ? parsed : undefined;
 }
 
 function isPanel(value: unknown): value is PlannerSearch["panel"] {

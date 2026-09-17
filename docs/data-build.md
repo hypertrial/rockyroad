@@ -87,14 +87,16 @@ To roll back a local build, restore the previous `data/geo`, `data/maps`, or `da
 Copy these paths:
 
 ```text
-data/rockyroad.duckdb
+data/rockyroad.duckdb (direct development) or the Compose rockyroad-state volume
 data/geo/
 data/maps/north-america.pmtiles
 data/routing/valhalla/
 data/osm/manifest.json
 ```
 
-Restore by replacing the same paths and restarting Compose. Trip tables live only in DuckDB; geographic datasets are immutable Parquet.
+Restore by replacing the same paths and restarting the API. Compose stores DuckDB in its `rockyroad-state` named volume while mounting generated geographic artifacts read-only from `data/`; direct development uses `data/rockyroad.duckdb`. Trip tables live only in DuckDB; geographic datasets are immutable Parquet.
+
+On the first Compose start after upgrading from the former bind-mounted database layout, the API copies `data/rockyroad.duckdb` (and its WAL, when present) into the empty `rockyroad-state` volume. It never overwrites a database already present in the named volume. Keep the legacy file until the upgraded stack has started successfully and your trips are visible.
 
 ## Local development
 

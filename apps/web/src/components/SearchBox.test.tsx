@@ -117,6 +117,23 @@ describe("SearchBox", () => {
     expect(input).toHaveValue("");
     expect(screen.queryByRole("button", { name: "Clear search" })).not.toBeInTheDocument();
     expect(screen.getByText(/Try a city, park, campground/)).toBeInTheDocument();
+    expect(screen.queryByText("Banff National Park")).not.toBeInTheDocument();
+  });
+
+  it("hides placeholder results as soon as the visible query changes", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "search")
+      .mockResolvedValueOnce({ query: "banff", results: [banff] })
+      .mockReturnValueOnce(new Promise<SearchResponse>(() => undefined));
+    renderSearch();
+
+    const input = screen.getByRole("searchbox");
+    await user.type(input, "banff");
+    expect(await screen.findByText("Banff National Park", {}, { timeout: 1_000 })).toBeInTheDocument();
+    await user.clear(input);
+    await user.type(input, "jasper");
+
+    expect(screen.queryByText("Banff National Park")).not.toBeInTheDocument();
   });
 
   it("offers a working retry after a provider failure", async () => {

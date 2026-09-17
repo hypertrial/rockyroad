@@ -14,6 +14,7 @@ type MockOptions = {
   routeSettingsFailure?: boolean;
   deleteFailureCount?: number;
   routeFailureCount?: number;
+  mapStyleStatus?: number;
 };
 
 const now = "2026-09-17T08:00:00Z";
@@ -135,7 +136,7 @@ export async function mockRockyRoad(page: Page, options: MockOptions = {}) {
         { id: "background", type: "background", paint: { "background-color": "#dfe9e7" } },
         { id: "local-attribution", type: "circle", source: "localAttribution" },
       ],
-    });
+    }, options.mapStyleStatus ?? 200);
   await page.route("**/mock-map-style.json", fulfillMapStyle);
   await page.route("**/map/style.json", fulfillMapStyle);
 

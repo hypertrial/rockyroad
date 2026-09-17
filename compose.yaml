@@ -22,7 +22,7 @@ services:
       context: .
       dockerfile: infra/api/Dockerfile
     environment:
-      ROCKYROAD_DUCKDB_PATH: /data/rockyroad.duckdb
+      ROCKYROAD_DUCKDB_PATH: /state/rockyroad.duckdb
       ROCKYROAD_GEO_DIR: /data/geo
       ROCKYROAD_MAPS_DIR: /data/maps
       ROCKYROAD_OSM_DIR: /data/osm
@@ -34,10 +34,12 @@ services:
       ROCKYROAD_ORS_BASE_URL: ${ROCKYROAD_ORS_BASE_URL:-https://api.heigit.org/openrouteservice}
       ROCKYROAD_ORS_OPTIMIZATION_URL: ${ROCKYROAD_ORS_OPTIMIZATION_URL:-https://api.heigit.org/vroom/v0/optimization}
       ROCKYROAD_PHOTON_URL: ${ROCKYROAD_PHOTON_URL:-https://photon.komoot.io}
+      ROCKYROAD_PHOTON_USER_AGENT: ${ROCKYROAD_PHOTON_USER_AGENT:-RockyRoad/0.1 (personal Canada+USA road-trip planner)}
       ROCKYROAD_OPENFREEMAP_STYLE_URL: ${ROCKYROAD_OPENFREEMAP_STYLE_URL:-https://tiles.openfreemap.org/styles/liberty}
       VALHALLA_URL: http://valhalla:8002
     volumes:
-      - ./data:/data
+      - rockyroad-state:/state
+      - ./data:/data:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready')"]
       interval: 10s
@@ -76,3 +78,6 @@ services:
 networks:
   internal:
     driver: bridge
+
+volumes:
+  rockyroad-state:

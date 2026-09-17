@@ -28,6 +28,7 @@ from rockyroad_api.models import (
 from rockyroad_api.ors import MAX_ORS_STOPS
 from rockyroad_api.providers import RouteProvider
 from rockyroad_api.routing import (
+    RouteComputation,
     RoutingError,
     cache_key,
     load_cached_route,
@@ -87,6 +88,18 @@ def apply_optimized_order(stops: list[StopOut], order: list[int]) -> list[StopOu
 
 def _as_stop_in(stops: list[StopOut]) -> list[StopIn]:
     return [StopIn(id=stop.id, name=stop.name, lon=stop.lon, lat=stop.lat, place_id=stop.place_id) for stop in stops]
+
+
+def _routing_revision(trip: TripOut) -> tuple[object, ...]:
+    return (
+        tuple((stop.id, stop.name, stop.lon, stop.lat, stop.place_id) for stop in trip.stops),
+        trip.settings.avoid_tolls,
+        trip.settings.avoid_highways,
+        trip.settings.avoid_ferries,
+        trip.settings.costing,
+        trip.settings.optimize,
+        trip.settings.selected_alternative,
+    )
 
 
 def get_trip(db: Database, trip_id: UUID) -> TripOut | None:
@@ -223,7 +236,7 @@ def delete_trip(db: Database, trip_id: UUID) -> bool:
     return True
 
 
-def route_trip(db: Database, client: RouteProvider, trip_id: UUID) -> RouteResponse:
+def route_trip(db: Database, client: RouteProvider, trip_id: UUID, *, force_optimize: bool = False) -> RouteResponse:
     trip = get_trip(db, trip_id)
     if trip is None:
         raise RoutingError("trip not found", status_code=404)
@@ -234,25 +247,39 @@ def route_trip(db: Database, client: RouteProvider, trip_id: UUID) -> RouteRespo
     except ValueError as exc:
         raise RoutingError(str(exc), status_code=422) from exc
     version = routing_data_version(db.settings)
-    key = cache_key(trip.stops, trip.settings, version)
+    original_revision = _routing_revision(trip)
+    settings = trip.settings.model_copy(update={"optimize": True}) if force_optimize else trip.settings
+    key = cache_key(trip.stops, settings, version)
     cached = db.read(lambda conn: load_cached_route(conn, trip_id, key))
-    if cached:
+    if cached and not force_optimize:
         return to_route_response(trip_id, cached, cache_hit=True, data_version=version)
-    computation = client.request_route(trip.stops, trip.settings)
+    computation = RouteComputation(alternatives=cached) if cached else client.request_route(trip.stops, settings)
     ordered_stops = trip.stops
-    if trip.settings.optimize and computation.optimized_order is not None:
+    if settings.optimize and computation.optimized_order is not None:
         ordered_stops = apply_optimized_order(trip.stops, computation.optimized_order)
-    persist_key = cache_key(ordered_stops, trip.settings, version)
+    persist_key = cache_key(ordered_stops, settings, version)
     reordered = [stop.id for stop in ordered_stops] != [stop.id for stop in trip.stops]
 
     def _write(conn: Any) -> None:
+        current = get_trip(db, trip_id)
+        if current is None:
+            raise RoutingError("trip not found", status_code=404)
+        if _routing_revision(current) != original_revision:
+            raise RoutingError("trip changed while the route was being built; try again", status_code=409)
+        if force_optimize:
+            _upsert_settings(conn, trip_id, settings)
         if reordered:
             _replace_stops(conn, trip_id, _as_stop_in(ordered_stops))
-        persist_route(conn, trip_id, persist_key, version, computation.alternatives)
+        if not cached:
+            persist_route(conn, trip_id, persist_key, version, computation.alternatives)
         conn.execute("UPDATE trips SET updated_at = now() WHERE id = ?", [str(trip_id)])
 
     db.write(_write)
-    return to_route_response(trip_id, computation.alternatives, cache_hit=False, data_version=version)
+    return to_route_response(trip_id, computation.alternatives, cache_hit=bool(cached), data_version=version)
+
+
+def optimize_trip(db: Database, client: RouteProvider, trip_id: UUID) -> RouteResponse:
+    return route_trip(db, client, trip_id, force_optimize=True)
 
 
 def list_saved_places(db: Database) -> list[SavedPlaceOut]:
@@ -317,6 +344,9 @@ def delete_saved_place(db: Database, place_id: UUID) -> bool:
 
 
 def _replace_stops(conn: Any, trip_id: UUID, stops: list[StopIn]) -> None:
+    stop_ids = [stop.id for stop in stops if stop.id is not None]
+    if len(stop_ids) != len(set(stop_ids)):
+        raise ValueError("stop ids must be unique")
     conn.execute("DELETE FROM trip_stops WHERE trip_id = ?", [str(trip_id)])
     for index, stop in enumerate(stops):
         conn.execute(

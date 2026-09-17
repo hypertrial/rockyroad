@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -41,8 +41,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(search.router, prefix="/api")
     app.include_router(trips.router, prefix="/api")
     maps_dir = config.maps_dir
-    maps_dir.mkdir(parents=True, exist_ok=True)
-    app.mount("/maps", StaticFiles(directory=str(maps_dir)), name="maps")
+    if maps_dir.is_dir():
+        app.mount("/maps", StaticFiles(directory=str(maps_dir)), name="maps")
+    else:
+
+        @app.get("/maps/{path:path}", include_in_schema=False)
+        def missing_map(path: str) -> Response:
+            del path
+            return Response(status_code=404)
+
     return app
 
 

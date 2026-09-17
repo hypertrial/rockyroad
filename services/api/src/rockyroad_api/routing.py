@@ -101,8 +101,18 @@ def valhalla_payload(stops: list[StopOut], settings: TripSettingsOut, *, optimiz
 
 def _maneuvers_from_legs(trip: dict[str, Any]) -> list[Maneuver]:
     maneuvers: list[Maneuver] = []
-    for leg in trip.get("legs") or []:
-        for item in leg.get("maneuvers") or []:
+    legs = trip.get("legs") or []
+    if not isinstance(legs, list):
+        raise ValueError("legs must be a list")
+    for leg in legs:
+        if not isinstance(leg, dict):
+            raise ValueError("leg must be an object")
+        items = leg.get("maneuvers") or []
+        if not isinstance(items, list):
+            raise ValueError("maneuvers must be a list")
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError("maneuver must be an object")
             maneuvers.append(
                 Maneuver(
                     instruction=str(item.get("instruction") or item.get("verbal_pre_transition_instruction") or ""),
@@ -118,14 +128,27 @@ def _maneuvers_from_legs(trip: dict[str, Any]) -> list[Maneuver]:
 def parse_valhalla(payload: dict[str, Any]) -> list[RouteAlternative]:
     trips: list[dict[str, Any]] = []
     if "trip" in payload:
-        trips.append(payload["trip"])
-    trips.extend(payload.get("alternates") or [])
+        primary = payload["trip"]
+        if not isinstance(primary, dict):
+            raise ValueError("trip must be an object")
+        trips.append(primary)
+    alternates = payload.get("alternates") or []
+    if not isinstance(alternates, list) or not all(isinstance(item, dict) for item in alternates):
+        raise ValueError("alternates must be a list of objects")
+    trips.extend(alternates)
     alternatives: list[RouteAlternative] = []
     for index, trip in enumerate(trips):
         if "trip" in trip and "legs" not in trip:
-            trip = trip["trip"]
+            nested = trip["trip"]
+            if not isinstance(nested, dict):
+                raise ValueError("nested trip must be an object")
+            trip = nested
         summary = trip.get("summary") or {}
+        if not isinstance(summary, dict):
+            raise ValueError("summary must be an object")
         shape = trip.get("shape") or ""
+        if not isinstance(shape, str):
+            raise ValueError("shape must be a string")
         geometry = {"type": "LineString", "coordinates": decode_polyline(shape) if shape else []}
         alternatives.append(
             RouteAlternative(
@@ -193,7 +216,16 @@ class ValhallaClient:
                 ),
                 status_code=422 if response.status_code < 500 else 503,
             )
-        return parse_route_computation(response.json())
+        try:
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("response is not an object")
+            computation = parse_route_computation(payload)
+            if not computation.alternatives:
+                raise ValueError("response has no routes")
+            return computation
+        except (IndexError, KeyError, OverflowError, TypeError, ValueError) as exc:
+            raise RoutingError("Valhalla returned an unreadable response.", status_code=502) from exc
 
 
 def persist_route(
