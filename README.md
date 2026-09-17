@@ -4,7 +4,7 @@ Canada + USA road-trip planner. The default mode uses hosted OpenFreeMap tiles, 
 
 RockyRoad is a monorepo:
 
-- `apps/web` — React 19, Vite, MapLibre, TanStack Query/Router, Zustand
+- `apps/web` — React 19, Vite, MapLibre, TanStack Query/Router, dnd-kit, and Playwright
 - `services/api` — FastAPI, DuckDB, OpenRouteService/Photon or Valhalla clients, data CLI
 - `data/` — generated local artifacts (not committed)
 - `compose.yaml` — Caddy + API; Valhalla starts only with `--profile local`
@@ -84,9 +84,14 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
-docker compose config
-docker compose --profile local config
+pnpm test:e2e
+make compose-config
 ```
+
+Install the Playwright Chromium runtime once with
+`pnpm --filter @rockyroad/web exec playwright install chromium`. The E2E suite
+uses mocked API responses and a local empty map style, so it does not call live
+tile, search, or routing providers.
 
 `make compose-config` still accepts either `docker-compose` or `docker compose` if the Compose plugin is missing locally.
 

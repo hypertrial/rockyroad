@@ -9,5 +9,5 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
-docker compose config
-docker compose --profile local config
+pnpm test:e2e
+make compose-config

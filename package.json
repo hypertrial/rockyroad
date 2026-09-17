@@ -11,6 +11,7 @@
     "lint": "pnpm --filter @rockyroad/web lint",
     "typecheck": "pnpm --filter @rockyroad/web typecheck",
     "test": "pnpm --filter @rockyroad/web test",
+    "test:e2e": "pnpm --filter @rockyroad/web test:e2e",
     "preview": "pnpm --filter @rockyroad/web preview"
   }
 }

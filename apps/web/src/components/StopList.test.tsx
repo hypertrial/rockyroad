@@ -1,8 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import type { ComponentProps } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Trip } from "../lib/types";
 import { StopList } from "./StopList";
+
+afterEach(cleanup);
 
 const trip: Trip = {
   id: "trip-1",
@@ -28,7 +31,7 @@ const trip: Trip = {
       name: "Charlottetown",
       lon: -63.13,
       lat: 46.24,
-      place_id: null,
+      place_id: "place-a",
       created_at: "2026-01-01T00:00:00Z",
     },
     {
@@ -44,17 +47,101 @@ const trip: Trip = {
   ],
 };
 
+function renderStops(overrides: Partial<ComponentProps<typeof StopList>> = {}) {
+  const props: ComponentProps<typeof StopList> = {
+    trip,
+    selectedStopId: null,
+    onChange: vi.fn(),
+    onSelect: vi.fn(),
+    onReplace: vi.fn(),
+    onRemove: vi.fn(),
+    ...overrides,
+  };
+  return { props, ...render(<StopList {...props} />) };
+}
+
 describe("StopList", () => {
-  it("reorders and removes stops", async () => {
+  it("marks the selected stop and makes every stop map-focusable", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    renderStops({ selectedStopId: "a", onSelect });
+
+    expect(screen.getByRole("button", { name: /Charlottetown 46\.240/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /Summerside 46\.390/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    await user.click(screen.getByRole("button", { name: /Summerside 46\.390/ }));
+    expect(onSelect).toHaveBeenCalledWith("b");
+  });
+
+  it("enforces reorder boundaries and emits the complete reordered stop list", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<StopList trip={trip} onChange={onChange} />);
+    renderStops({ onChange });
+
+    expect(screen.getByRole("button", { name: "Move Charlottetown up" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move Summerside down" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Move Summerside up" }));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith([
-      expect.objectContaining({ name: "Summerside" }),
-      expect.objectContaining({ name: "Charlottetown" }),
+      {
+        id: "b",
+        name: "Summerside",
+        lon: -63.79,
+        lat: 46.39,
+        place_id: null,
+      },
+      {
+        id: "a",
+        name: "Charlottetown",
+        lon: -63.13,
+        lat: 46.24,
+        place_id: "place-a",
+      },
     ]);
-    await user.click(screen.getByRole("button", { name: "Remove Charlottetown" }));
-    expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ name: "Summerside" })]);
+  });
+
+  it("offers explicit keyboard-accessible location replacement and removal", async () => {
+    const user = userEvent.setup();
+    const onReplace = vi.fn();
+    const onRemove = vi.fn();
+    renderStops({ onReplace, onRemove });
+
+    await user.click(screen.getByRole("button", { name: "Change location for Charlottetown" }));
+    await user.click(screen.getByRole("button", { name: "Remove Summerside" }));
+    expect(onReplace).toHaveBeenCalledWith("a");
+    expect(onRemove).toHaveBeenCalledWith("b");
+  });
+
+  it("locks every stop mutation control while persistence is pending", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const onReplace = vi.fn();
+    const onRemove = vi.fn();
+    renderStops({ disabled: true, onChange, onReplace, onRemove });
+
+    for (const button of screen.getAllByRole("button", { name: /^(Reorder|Move|Change location|Remove)/ })) {
+      expect(button).toBeDisabled();
+    }
+    await user.click(screen.getByRole("button", { name: "Move Summerside up" }));
+    await user.click(screen.getByRole("button", { name: "Change location for Summerside" }));
+    await user.click(screen.getByRole("button", { name: "Remove Summerside" }));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onReplace).not.toHaveBeenCalled();
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it("renders actionable empty-state guidance for a new trip", () => {
+    renderStops({ trip: { ...trip, stops: [] } });
+
+    expect(screen.getByText("Add your first stop")).toBeInTheDocument();
+    expect(screen.getByText(/Search for a place or click anywhere/)).toBeInTheDocument();
+    expect(screen.getByLabelText("0 stops")).toBeInTheDocument();
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
   });
 });

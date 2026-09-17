@@ -1,12 +1,16 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { LoaderCircle, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { HealthResponse, PlaceResult } from "../lib/types";
-import { useUiStore } from "../stores/ui";
+import type { HealthResponse, PlaceResult, ViewportBounds } from "../lib/types";
+import { StatusNotice } from "./StatusNotice";
 
 type Props = {
-  onSelect: (place: PlaceResult) => void;
+  onSelect: (place: PlaceResult) => void | Promise<void>;
   health?: HealthResponse;
+  viewport: ViewportBounds | null;
+  disabled?: boolean;
+  editingName?: string | null;
 };
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
@@ -18,10 +22,13 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
-export function SearchBox({ onSelect, health }: Props) {
+function formatFeatureType(value: string): string {
+  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+export function SearchBox({ onSelect, health, viewport, disabled = false, editingName }: Props) {
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebouncedValue(query, 300);
-  const viewport = useUiStore((state) => state.viewport);
   const hosted = health?.provider_mode === "hosted";
   const search = useQuery({
     queryKey: ["search", debouncedQuery, viewport],
@@ -35,39 +42,70 @@ export function SearchBox({ onSelect, health }: Props) {
   const quota = /quota|rate limit/i.test(errorMessage);
 
   return (
-    <section className="panel">
-      <h2>Find a place</h2>
-      <input
-        type="search"
-        value={query}
-        placeholder="Town, park, campground, fuel…"
-        aria-label="Search places"
-        onChange={(event) => setQuery(event.target.value)}
-      />
-      <div className="search-results" style={{ marginTop: "0.75rem" }}>
+    <section className="planner-tool" aria-labelledby="search-heading">
+      <div className="tool-heading">
+        <span className="eyebrow">Add a waypoint</span>
+        <h2 id="search-heading">{editingName ? `Move ${editingName}` : "Find a place"}</h2>
+        <p className="muted">
+          {editingName ? "Choose a new location for this stop." : "Search near the visible map or anywhere in Canada and the USA."}
+        </p>
+      </div>
+      <div className="search-field-wrap">
+        <Search aria-hidden="true" size={19} />
+        <input
+          type="search"
+          value={query}
+          placeholder="Town, park, campground, fuel…"
+          aria-label="Search places"
+          onChange={(event) => setQuery(event.target.value)}
+          disabled={disabled}
+          autoComplete="off"
+        />
+        {query ? (
+          <button type="button" className="icon-button search-clear" aria-label="Clear search" onClick={() => setQuery("")}>
+            <X aria-hidden="true" size={18} />
+          </button>
+        ) : null}
+      </div>
+      <div className="search-results" aria-live="polite">
         {search.data?.results.map((place) => (
-          <button key={place.id} type="button" onClick={() => onSelect(place)}>
-            <span>
+          <button key={place.id} type="button" disabled={disabled} onClick={() => void onSelect(place)}>
+            <span className="search-result-copy">
               <strong>{place.name}</strong>
-              <div className="muted">{place.feature_type}</div>
+              <span className="muted">{formatFeatureType(place.feature_type)}</span>
             </span>
-            <span className="muted">{place.score.toFixed(2)}</span>
+            <span className="search-result-coordinates">
+              {place.lat.toFixed(2)}, {place.lon.toFixed(2)}
+            </span>
           </button>
         ))}
         {search.isFetching ? (
-          <p className="muted">{hosted ? "Searching Photon…" : "Searching local index…"}</p>
+          <div className="search-loading" role="status">
+            <span className="search-loading-label">
+              <LoaderCircle className="spin" aria-hidden="true" size={18} />
+              <span>{hosted ? "Searching places…" : "Searching the local index…"}</span>
+            </span>
+            <span className="search-result-skeleton" aria-hidden="true">
+              <span className="skeleton skeleton-line" />
+              <span className="skeleton skeleton-line" />
+            </span>
+          </div>
         ) : null}
+        {!query.trim() ? <p className="search-prompt">Try a city, park, campground, viewpoint, or fuel stop.</p> : null}
         {search.data && search.data.results.length === 0 && !search.isFetching ? (
-          <p className="muted">{hosted ? "No matching places." : "No local matches."}</p>
+          <div className="search-empty">
+            <strong>No places found</strong>
+            <span>{hosted ? "Try a broader name or move the map closer." : "Try another name within your downloaded region."}</span>
+          </div>
         ) : null}
         {search.error ? (
-          <p className="error">
+          <StatusNotice variant="error" actionLabel="Try again" onAction={() => void search.refetch()}>
             {quota
               ? "Search quota or rate limit reached. Try again in a minute."
               : hosted
                 ? "Photon search is temporarily unavailable."
                 : errorMessage || "Search failed."}
-          </p>
+          </StatusNotice>
         ) : null}
       </div>
     </section>

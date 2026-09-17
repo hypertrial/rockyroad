@@ -106,3 +106,10 @@ export type PlannerSearch = {
   stop?: string;
   panel?: "search" | "stops" | "directions" | "options";
 };
+
+export type ViewportBounds = {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+};

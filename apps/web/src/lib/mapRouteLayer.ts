@@ -1,4 +1,5 @@
 export const TRIP_ROUTE_SOURCE_ID = "trip-route";
+export const TRIP_ROUTE_HALO_LAYER_ID = "trip-route-halo";
 export const TRIP_ROUTE_LAYER_ID = "trip-route-line";
 
 export const EMPTY_ROUTE_GEOMETRY = {
@@ -47,13 +48,23 @@ export function syncTripRouteLayer(map: RouteMap, geometry: RouteGeometry | null
   }
   map.addSource(TRIP_ROUTE_SOURCE_ID, { type: "geojson", data });
   map.addLayer({
+    id: TRIP_ROUTE_HALO_LAYER_ID,
+    type: "line",
+    source: TRIP_ROUTE_SOURCE_ID,
+    paint: {
+      "line-color": "#fffdf8",
+      "line-width": 9,
+      "line-opacity": 0.82,
+    },
+  });
+  map.addLayer({
     id: TRIP_ROUTE_LAYER_ID,
     type: "line",
     source: TRIP_ROUTE_SOURCE_ID,
     paint: {
       "line-color": "#b4532a",
-      "line-width": 4,
-      "line-opacity": 0.9,
+      "line-width": 5,
+      "line-opacity": 0.96,
     },
   });
   return true;

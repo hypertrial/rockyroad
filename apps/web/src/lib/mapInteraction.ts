@@ -39,3 +39,14 @@ export function toStopDrafts(stops: Array<Pick<Stop, "id" | "name" | "lon" | "la
     place_id: stop.place_id,
   }));
 }
+
+export function restoreRemovedStop(
+  currentStops: StopDraft[],
+  removedStop: StopDraft,
+  originalIndex: number,
+): StopDraft[] {
+  if (removedStop.id && currentStops.some((stop) => stop.id === removedStop.id)) return currentStops;
+  const restored = [...currentStops];
+  restored.splice(Math.min(Math.max(originalIndex, 0), restored.length), 0, removedStop);
+  return restored;
+}

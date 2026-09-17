@@ -30,7 +30,10 @@ export function coverageHint(
 
 export function initialMapCamera(search: PlannerSearch, bounds: HealthResponse["bounds"]): MapCamera {
   const urlReady = search.lat !== undefined && search.lng !== undefined && search.z !== undefined;
-  if (bounds && bounds.length === 4 && (!urlReady || ((search.z ?? 0) < 5 && isSampleSized(bounds)))) {
+  if (urlReady) {
+    return { kind: "center", center: [search.lng as number, search.lat as number], zoom: search.z as number };
+  }
+  if (bounds && bounds.length === 4 && isSampleSized(bounds)) {
     const [west, south, east, north] = bounds;
     return {
       kind: "bounds",
@@ -39,9 +42,6 @@ export function initialMapCamera(search: PlannerSearch, bounds: HealthResponse["
         [east, north],
       ],
     };
-  }
-  if (urlReady) {
-    return { kind: "center", center: [search.lng as number, search.lat as number], zoom: search.z as number };
   }
   return { kind: "center", center: CONTINENT_CENTER, zoom: CONTINENT_ZOOM };
 }

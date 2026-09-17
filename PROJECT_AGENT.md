@@ -30,8 +30,7 @@ and local Pad state out of this private repository.
 - Fast: `uv run ruff check services/api`, `uv run pytest`, `pnpm typecheck`,
   `pnpm lint`, and `pnpm test`.
 - Completion: also `uv run ruff format --check services/api`, `uv run pyright`,
-  `pnpm build`, `docker compose config`, and
-  `docker compose --profile local config`.
+  `pnpm build`, `pnpm test:e2e`, and `make compose-config`.
 
 These commands are wrapped by `scripts/verify-fast` and `scripts/verify`.
 GitHub Actions remains the independent verification source of truth.

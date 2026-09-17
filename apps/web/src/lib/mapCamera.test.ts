@@ -4,15 +4,9 @@ import { CONTINENT_CENTER, CONTINENT_ZOOM, coverageHint, initialMapCamera, point
 const pei = [-64.45, 45.9, -61.9, 47.1];
 
 describe("initialMapCamera", () => {
-  it("fits a small extract even when the URL is a continental overview", () => {
+  it("keeps an explicit URL camera even when the extract is small", () => {
     const camera = initialMapCamera({ lat: 47.85, lng: -101.64, z: 3.42 }, pei);
-    expect(camera).toEqual({
-      kind: "bounds",
-      bounds: [
-        [-64.45, 45.9],
-        [-61.9, 47.1],
-      ],
-    });
+    expect(camera).toEqual({ kind: "center", center: [-101.64, 47.85], zoom: 3.42 });
   });
 
   it("keeps a zoomed URL when the extract is continental", () => {

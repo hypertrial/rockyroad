@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   EMPTY_ROUTE_GEOMETRY,
+  TRIP_ROUTE_HALO_LAYER_ID,
   TRIP_ROUTE_LAYER_ID,
   TRIP_ROUTE_SOURCE_ID,
   syncTripRouteLayer,
@@ -49,7 +50,8 @@ describe("syncTripRouteLayer", () => {
         data: expect.objectContaining({ geometry }),
       }),
     );
-    expect(addLayer).toHaveBeenCalledWith(expect.objectContaining({ id: TRIP_ROUTE_LAYER_ID }));
+    expect(addLayer).toHaveBeenNthCalledWith(1, expect.objectContaining({ id: TRIP_ROUTE_HALO_LAYER_ID }));
+    expect(addLayer).toHaveBeenNthCalledWith(2, expect.objectContaining({ id: TRIP_ROUTE_LAYER_ID }));
   });
 
   it("updates an existing source instead of adding another layer", () => {

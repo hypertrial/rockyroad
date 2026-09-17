@@ -1,45 +1,42 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { BadgeDollarSign, Route, Ship } from "lucide-react";
 import type { Trip } from "../lib/types";
+import { StatusNotice } from "./StatusNotice";
 
 type Props = {
   trip: Trip;
+  disabled?: boolean;
+  pending?: boolean;
+  error?: string | null;
+  onToggle: (key: "avoid_tolls" | "avoid_highways" | "avoid_ferries") => void;
 };
 
-export function RouteOptions({ trip }: Props) {
-  const queryClient = useQueryClient();
-  const update = useMutation({
-    mutationFn: (settings: Partial<Trip["settings"]>) => api.updateTrip(trip.id, { settings }),
-    onSuccess: (next) => queryClient.setQueryData(["trip", trip.id], next),
-  });
-
-  const toggle = (key: "avoid_tolls" | "avoid_highways" | "avoid_ferries") => {
-    update.mutate({
-      avoid_tolls: trip.settings.avoid_tolls,
-      avoid_highways: trip.settings.avoid_highways,
-      avoid_ferries: trip.settings.avoid_ferries,
-      costing: trip.settings.costing,
-      optimize: trip.settings.optimize,
-      selected_alternative: trip.settings.selected_alternative,
-      [key]: !trip.settings[key],
-    });
-  };
-
+export function RouteOptions({ trip, disabled = false, pending = false, error, onToggle }: Props) {
   return (
-    <section className="panel">
-      <h2>Route options</h2>
-      <label className="checkbox">
-        <input type="checkbox" checked={trip.settings.avoid_tolls} onChange={() => toggle("avoid_tolls")} />
-        Avoid tolls
-      </label>
-      <label className="checkbox">
-        <input type="checkbox" checked={trip.settings.avoid_highways} onChange={() => toggle("avoid_highways")} />
-        Avoid highways
-      </label>
-      <label className="checkbox">
-        <input type="checkbox" checked={trip.settings.avoid_ferries} onChange={() => toggle("avoid_ferries")} />
-        Avoid ferries
-      </label>
+    <section className="planner-tool" aria-labelledby="route-options-heading">
+      <div className="tool-heading">
+        <span className="eyebrow">Shape the drive</span>
+        <h2 id="route-options-heading">Route preferences</h2>
+        <p className="muted">Choose what RockyRoad should avoid when it builds the route.</p>
+      </div>
+      <div className="settings-list">
+        <label className="setting-row">
+          <span className="setting-icon"><BadgeDollarSign aria-hidden="true" size={19} /></span>
+          <span><strong>Avoid tolls</strong><small>Prefer roads without toll charges.</small></span>
+          <input type="checkbox" checked={trip.settings.avoid_tolls} disabled={disabled} onChange={() => onToggle("avoid_tolls")} />
+        </label>
+        <label className="setting-row">
+          <span className="setting-icon"><Route aria-hidden="true" size={19} /></span>
+          <span><strong>Avoid highways</strong><small>Favor secondary and local roads.</small></span>
+          <input type="checkbox" checked={trip.settings.avoid_highways} disabled={disabled} onChange={() => onToggle("avoid_highways")} />
+        </label>
+        <label className="setting-row">
+          <span className="setting-icon"><Ship aria-hidden="true" size={19} /></span>
+          <span><strong>Avoid ferries</strong><small>Keep the route on connected roads.</small></span>
+          <input type="checkbox" checked={trip.settings.avoid_ferries} disabled={disabled} onChange={() => onToggle("avoid_ferries")} />
+        </label>
+      </div>
+      <div className="mutation-status" aria-live="polite">{pending ? "Saving route preferences…" : ""}</div>
+      {error ? <StatusNotice variant="error">{error}</StatusNotice> : null}
     </section>
   );
 }

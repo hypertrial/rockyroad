@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Stop } from "./types";
-import { commitMapPoint, coverageDropHint, toStopDrafts, withMovedStop } from "./mapInteraction";
+import { commitMapPoint, coverageDropHint, restoreRemovedStop, toStopDrafts, withMovedStop } from "./mapInteraction";
 
 const pei = [-64.45, 45.9, -61.9, 47.1];
 const [west, south, east, north] = pei;
@@ -135,5 +135,25 @@ describe("coverageDropHint", () => {
   it("keeps the drop prefix when there is no extra coverage hint", () => {
     expect(coverageDropHint(undefined)).toBe("Drop the pin inside the map coverage.");
     expect(coverageDropHint(null, "local")).toBe("Drop the pin inside the map coverage.");
+  });
+});
+
+describe("restoreRemovedStop", () => {
+  it("restores into the latest list without discarding interleaved edits", () => {
+    const removed = twoStops[1];
+    const latest = [
+      { ...twoStops[0], name: "Charlottetown waterfront" },
+      { id: "c", name: "Cavendish", lon: -63.43, lat: 46.49, place_id: "place-c" },
+    ];
+
+    expect(restoreRemovedStop(latest, removed, 1)).toEqual([
+      latest[0],
+      removed,
+      latest[1],
+    ]);
+  });
+
+  it("does not duplicate a stop that was already restored", () => {
+    expect(restoreRemovedStop(twoStops, twoStops[1], 0)).toBe(twoStops);
   });
 });

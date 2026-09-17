@@ -35,10 +35,12 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
+      - run: pnpm --filter @rockyroad/web exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
 
   compose:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker compose config
-      - run: docker compose --profile local config
+      - run: docker compose config --quiet
+      - run: docker compose --profile local config --quiet
