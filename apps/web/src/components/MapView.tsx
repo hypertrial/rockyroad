@@ -4,7 +4,8 @@ import maplibregl from "maplibre-gl";
 import { Protocol } from "pmtiles";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
-import { coverageHint, initialMapCamera, pointInExtract } from "../lib/mapCamera";
+import { coverageHint, initialMapCamera } from "../lib/mapCamera";
+import { commitMapPoint, coverageDropHint } from "../lib/mapInteraction";
 import { syncTripRouteLayer, type RouteMap } from "../lib/mapRouteLayer";
 import { plannerMapStyle, usesLocalPmtiles } from "../lib/mapStyle";
 import type { Trip } from "../lib/types";
@@ -24,15 +25,22 @@ function ensurePmtilesProtocol() {
 type Props = {
   trip: Trip;
   onAddStop: (lon: number, lat: number) => void;
+  onMoveStop: (stopId: string, lon: number, lat: number) => void;
 };
 
-export function MapView({ trip, onAddStop }: Props) {
+export function MapView({ trip, onAddStop, onMoveStop }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const addStopRef = useRef(onAddStop);
   addStopRef.current = onAddStop;
+  const moveStopRef = useRef(onMoveStop);
+  moveStopRef.current = onMoveStop;
+  const draggingStopIdRef = useRef<string | null>(null);
+  const suppressMapClickRef = useRef(false);
   const navigate = useNavigate();
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
   const search = useSearch({ from: "/trips/$tripId" });
   const initialSearchRef = useRef(search);
   const selectedStopId = useUiStore((state) => state.selectedStopId);
@@ -83,14 +91,16 @@ export function MapView({ trip, onAddStop }: Props) {
       }
     });
     map.on("click", (event) => {
+      if (draggingStopIdRef.current || suppressMapClickRef.current) return;
       const { lng, lat } = event.lngLat;
-      if (!pointInExtract(lng, lat, boundsRef.current)) {
+      const committed = commitMapPoint(lng, lat, boundsRef.current);
+      if (!committed.ok) {
         const extra = coverageHint(profileRef.current, modeRef.current);
         setClickHint(extra ? `Click inside the map coverage. ${extra}` : "Click inside the map coverage.");
         return;
       }
       setClickHint(null);
-      addStopRef.current(lng, lat);
+      addStopRef.current(committed.lon, committed.lat);
     });
     map.on("moveend", () => {
       const center = map.getCenter();
@@ -101,8 +111,9 @@ export function MapView({ trip, onAddStop }: Props) {
         east: bounds.getEast(),
         north: bounds.getNorth(),
       });
-      void navigate({
+      void navigateRef.current({
         from: tripRoute.fullPath,
+        replace: true,
         search: (previous) => ({
           ...previous,
           lat: Number(center.lat.toFixed(5)),
@@ -111,32 +122,51 @@ export function MapView({ trip, onAddStop }: Props) {
         }),
       });
     });
+    const resize = () => map.resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(map.getContainer());
     mapRef.current = map;
     return () => {
+      observer.disconnect();
       map.remove();
       mapRef.current = null;
       setMapReady(false);
     };
-  }, [
-    boundsKey,
-    health.isPending,
-    mapStyleUrl,
-    mapsAvailable,
-    navigate,
-    providerMode,
-    setMapReady,
-    setViewport,
-  ]);
+  }, [boundsKey, health.isPending, mapStyleUrl, mapsAvailable, providerMode, setMapReady, setViewport]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || draggingStopIdRef.current) return;
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current = trip.stops.map((stop, index) => {
-      const marker = new maplibregl.Marker({ color: stop.id === selectedStopId ? "#b4532a" : "#2d4a3e" })
+      const marker = new maplibregl.Marker({
+        color: stop.id === selectedStopId ? "#b4532a" : "#2d4a3e",
+        draggable: true,
+      })
         .setLngLat([stop.lon, stop.lat])
-        .setPopup(new maplibregl.Popup().setText(`${index + 1}. ${stop.name}`))
+        .setPopup(new maplibregl.Popup({ closeOnClick: true }).setText(`${index + 1}. ${stop.name}`))
         .addTo(map);
+      marker.getElement().setAttribute("aria-label", `Drag to move ${stop.name}`);
+      marker.on("dragstart", () => {
+        draggingStopIdRef.current = stop.id;
+        marker.getPopup()?.remove();
+      });
+      marker.on("dragend", () => {
+        const { lng, lat } = marker.getLngLat();
+        const committed = commitMapPoint(lng, lat, boundsRef.current);
+        draggingStopIdRef.current = null;
+        suppressMapClickRef.current = true;
+        window.setTimeout(() => {
+          suppressMapClickRef.current = false;
+        }, 300);
+        if (!committed.ok) {
+          marker.setLngLat([stop.lon, stop.lat]);
+          setClickHint(coverageDropHint(profileRef.current, modeRef.current));
+          return;
+        }
+        setClickHint(null);
+        moveStopRef.current(stop.id, committed.lon, committed.lat);
+      });
       return marker;
     });
   }, [selectedStopId, trip.stops]);
@@ -157,8 +187,8 @@ export function MapView({ trip, onAddStop }: Props) {
       ) : null}
       <div className="map-legend">
         {hosted
-          ? "Click the map to drop a stop. Map tiles come from OpenFreeMap. Search and routes go through RockyRoad to Photon and OpenRouteService."
-          : "Click inside the downloaded map to drop a stop. Nothing is sent to the cloud."}
+          ? "Drag the map to pan. Drag a pin to move a stop. Click empty map to add a stop. Tiles come from OpenFreeMap; search and routes go through RockyRoad."
+          : "Drag the map to pan. Drag a pin to move a stop. Click inside the downloaded map to add a stop. Nothing is sent to the cloud."}
       </div>
     </div>
   );

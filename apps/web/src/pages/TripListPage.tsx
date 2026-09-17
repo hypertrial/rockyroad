@@ -59,7 +59,7 @@ export function TripListPage() {
             <Link key={trip.id} to="/trips/$tripId" params={{ tripId: trip.id }} className="trip-card">
               <h2>{trip.name}</h2>
               <p className="muted">
-                {trip.stop_count} stops · {formatDate(trip.updated_at)}
+                {trip.stop_count === 1 ? "1 stop" : `${trip.stop_count} stops`} · {formatDate(trip.updated_at)}
               </p>
             </Link>
           ))}

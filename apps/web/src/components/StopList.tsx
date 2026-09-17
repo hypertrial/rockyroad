@@ -46,7 +46,9 @@ export function StopList({ trip, onChange }: Props) {
   return (
     <section className="panel">
       <h2>Stops</h2>
-      {trip.stops.length === 0 ? <p className="muted">Search or click the map to add a stop.</p> : null}
+      {trip.stops.length === 0 ? (
+        <p className="muted">Search or click the map to add a stop.</p>
+      ) : null}
       <ol>
         {trip.stops.map((stop, index) => (
           <li key={stop.id}>

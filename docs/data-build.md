@@ -106,7 +106,7 @@ That starts FastAPI on `:8000`, waits until `/api/health` responds, then starts 
 
 Hosted `/api/health` reports `provider_mode`, OpenFreeMap `map_style_url`, Canada+USA `bounds`, and whether `ROCKYROAD_ORS_API_KEY` is present. It does not probe third parties on every request.
 
-Local mode still serves `data/maps` with byte ranges and frames a sample PEI map from extract `bounds`. Map clicks and **Build route** stay inside those bounds. Routing needs a graph plus Valhalla on `:8002`; `uv run rockyroad-data build-routing && docker compose --profile local up -d valhalla` builds the graph and publishes the service. If the repo path contains a space, Docker Desktop cannot bind-mount `data/routing/valhalla`; `build-routing` stages tiles under `~/.cache/rockyroad/valhalla` and Compose should set `ROCKYROAD_VALHALLA_FILES` to that directory.
+Local mode still serves `data/maps` with byte ranges and frames a sample PEI map from extract `bounds`. Map clicks, pin moves, and **Build route** stay inside those bounds. Routing needs a graph plus Valhalla on `:8002`; `uv run rockyroad-data build-routing && docker compose --profile local up -d valhalla` builds the graph and publishes the service. If the repo path contains a space, Docker Desktop cannot bind-mount `data/routing/valhalla`; `build-routing` stages tiles under `~/.cache/rockyroad/valhalla` and Compose should set `ROCKYROAD_VALHALLA_FILES` to that directory.
 
 ## Offline verification
 

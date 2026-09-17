@@ -9,8 +9,9 @@ import { StopList } from "../components/StopList";
 import { api, formatRoutingError } from "../lib/api";
 import { formatDistance, formatDuration } from "../lib/format";
 import { coverageHint, pointInExtract } from "../lib/mapCamera";
+import { toStopDrafts, withMovedStop } from "../lib/mapInteraction";
 import { shouldPersistTripName } from "../lib/tripName";
-import type { PlaceResult, Stop } from "../lib/types";
+import type { PlaceResult, Stop, Trip } from "../lib/types";
 import { tripRoute } from "../router";
 import { useUiStore } from "../stores/ui";
 
@@ -73,14 +74,9 @@ export function PlannerPage() {
 
   const addPlace = (place: PlaceResult) => {
     if (!trip) return;
+    const latest = queryClient.getQueryData<Trip>(["trip", tripId]);
     replaceStops.mutate([
-      ...trip.stops.map((stop) => ({
-        id: stop.id,
-        name: stop.name,
-        lon: stop.lon,
-        lat: stop.lat,
-        place_id: stop.place_id,
-      })),
+      ...toStopDrafts((latest ?? trip).stops),
       { name: place.name, lon: place.lon, lat: place.lat, place_id: place.id },
     ]);
   };
@@ -151,7 +147,11 @@ export function PlannerPage() {
             {formatDistance(selected.distance_m)} · {formatDuration(selected.duration_s)}
           </p>
         ) : (
-          <p className="hint">Add at least two stops, then build a route.</p>
+          <p className="hint">
+            {trip.stops.length < 2
+              ? "Add at least two stops, then build a route."
+              : "Build a route when the stops look right."}
+          </p>
         )}
         {outsideExtract ? (
           <p className="error">
@@ -168,21 +168,19 @@ export function PlannerPage() {
             {formatRoutingError(optimizeTrip.error.message, health.data?.profile, health.data?.provider_mode)}
           </p>
         ) : null}
+        {replaceStops.error ? <p className="error">{replaceStops.error.message}</p> : null}
       </aside>
       <MapView
         trip={trip}
-        onAddStop={(lon, lat) =>
-          replaceStops.mutate([
-            ...trip.stops.map((stop) => ({
-              id: stop.id,
-              name: stop.name,
-              lon: stop.lon,
-              lat: stop.lat,
-              place_id: stop.place_id,
-            })),
-            { name: `Stop ${trip.stops.length + 1}`, lon, lat, place_id: null },
-          ])
-        }
+        onAddStop={(lon, lat) => {
+          const latest = queryClient.getQueryData<Trip>(["trip", tripId]);
+          const stops = toStopDrafts((latest ?? trip).stops);
+          replaceStops.mutate([...stops, { name: `Stop ${stops.length + 1}`, lon, lat, place_id: null }]);
+        }}
+        onMoveStop={(stopId, lon, lat) => {
+          const latest = queryClient.getQueryData<Trip>(["trip", tripId]);
+          replaceStops.mutate(withMovedStop(toStopDrafts((latest ?? trip).stops), stopId, lon, lat));
+        }}
       />
     </div>
   );
