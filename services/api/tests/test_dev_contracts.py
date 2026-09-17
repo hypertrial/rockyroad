@@ -14,7 +14,8 @@ def test_dev_script_probes_pmtiles_with_a_byte_range() -> None:
     assert '-r 0-0 "http://127.0.0.1:8000/maps/north-america.pmtiles"' in script
     assert "%{http_code}" in script
     assert 'curl -sf -o /dev/null "http://127.0.0.1:8000/maps/north-america.pmtiles"' not in script
-    assert 'curl -sf "http://127.0.0.1:8000/api/ready"' in script
+    assert '--max-time 1 "http://127.0.0.1:8000/api/ready"' in script
+    assert '--max-time 1 "http://127.0.0.1:8000/api/health"' in script
 
 
 def test_caddyfile_does_not_mark_pmtiles_immutable() -> None:
@@ -142,6 +143,55 @@ def test_dev_script_honors_an_explicitly_empty_ors_key(tmp_path: Path) -> None:
     result = subprocess.run([str(script)], cwd=root, env=env, text=True, capture_output=True, timeout=10, check=True)
 
     assert "Hosted routing needs ROCKYROAD_ORS_API_KEY" in result.stdout
+
+
+def test_dev_script_waits_past_the_old_startup_deadline(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    scripts = root / "scripts"
+    scripts.mkdir(parents=True)
+    script = scripts / "dev"
+    script.write_text((REPO_ROOT / "scripts" / "dev").read_text(encoding="utf-8"), encoding="utf-8")
+    script.chmod(0o755)
+    for directory in (root / ".venv", root / "node_modules", root / "apps" / "web" / "node_modules"):
+        directory.mkdir(parents=True)
+    (root / ".env").write_text("ROCKYROAD_PROVIDER_MODE=hosted\n", encoding="utf-8")
+
+    count_file = tmp_path / "health-probes"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "curl").write_text(
+        """#!/bin/sh
+case "$*" in
+  *api/ready*) exit 1 ;;
+  *api/health*)
+    count=0
+    if [ -f "$ROCKYROAD_TEST_CURL_COUNT" ]; then count="$(cat "$ROCKYROAD_TEST_CURL_COUNT")"; fi
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$ROCKYROAD_TEST_CURL_COUNT"
+    [ "$count" -ge 82 ]
+    exit
+    ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    (bin_dir / "uv").write_text("#!/bin/sh\n/bin/sleep 2\n", encoding="utf-8")
+    (bin_dir / "pnpm").write_text("#!/bin/sh\n/bin/sleep 0.1\n", encoding="utf-8")
+    (bin_dir / "sleep").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    for path in bin_dir.iterdir():
+        path.chmod(0o755)
+
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "ROCKYROAD_DEV_API_TIMEOUT_SECONDS": "21",
+        "ROCKYROAD_TEST_CURL_COUNT": str(count_file),
+    }
+    result = subprocess.run([str(script)], cwd=root, env=env, text=True, capture_output=True, timeout=10, check=True)
+
+    assert int(count_file.read_text(encoding="utf-8")) == 82
+    assert "RockyRoad is running." in result.stdout
 
 
 def test_compose_forwards_photon_user_agent() -> None:

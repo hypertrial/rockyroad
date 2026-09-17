@@ -39,7 +39,7 @@ cleanup() {
 
 trap cleanup INT TERM EXIT
 
-if curl -sf "http://127.0.0.1:8000/api/ready" >/dev/null 2>&1; then
+if curl -sf --connect-timeout 1 --max-time 1 "http://127.0.0.1:8000/api/ready" >/dev/null 2>&1; then
   echo "Port 8000 is already in use. Stop the other RockyRoad API and rerun ./scripts/dev."
   exit 1
 fi
@@ -50,21 +50,38 @@ echo "Starting RockyRoad API on http://127.0.0.1:8000"
 uv run rockyroad-api &
 api_pid=$!
 
+api_timeout_seconds="${ROCKYROAD_DEV_API_TIMEOUT_SECONDS:-120}"
+if [[ ! "$api_timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ROCKYROAD_DEV_API_TIMEOUT_SECONDS must be a positive whole number."
+  exit 1
+fi
+
 ready=0
-for _ in $(seq 1 80); do
+started_at=$SECONDS
+next_progress=10
+while ((SECONDS - started_at < api_timeout_seconds)); do
   if ! kill -0 "$api_pid" 2>/dev/null; then
     echo "API process exited before it became ready."
     exit 1
   fi
-  if curl -sf "http://127.0.0.1:8000/api/health" >/dev/null; then
+  if curl -sf --connect-timeout 1 --max-time 1 "http://127.0.0.1:8000/api/health" >/dev/null; then
     ready=1
     break
+  fi
+  elapsed=$((SECONDS - started_at))
+  if ((elapsed >= next_progress)); then
+    echo "API is still starting (${elapsed}s elapsed; timeout ${api_timeout_seconds}s)."
+    next_progress=$((next_progress + 10))
   fi
   sleep 0.25
 done
 
 if [[ "$ready" -ne 1 ]]; then
-  echo "API did not become ready on http://127.0.0.1:8000/api/health"
+  echo "API did not become ready within ${api_timeout_seconds}s on http://127.0.0.1:8000/api/health"
+  echo "Review the API startup output above, or run this command directly for diagnostics:"
+  echo "  PYTHONPATH=services/api/src uv run rockyroad-api"
+  echo "For unusually slow first-time setup, retry with a larger timeout:"
+  echo "  ROCKYROAD_DEV_API_TIMEOUT_SECONDS=240 ./scripts/dev"
   exit 1
 fi
 
