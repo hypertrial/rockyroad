@@ -1,0 +1,12 @@
+{
+  "files": {
+    ".agents/skills/pad-engineering/SKILL.md": "3cb5185116663c2f8ee58764a4180784ff2604b05e2e75b2b6f13cc1ccfd0071",
+    "AGENTS.md": "8e0e7df28f0df8d847f4981da0978c28c2c9615b0382c3bfc62c6af90a52f6b1",
+    "PROJECT_AGENT.md": "062415961a227d27214b24952e19d6aff8319d0503596cb98c2aa0797d1ec28f",
+    "scripts/verify": "25f14092d6d433c9fc7142016d00dabf3a247826d2cb65d7055e22aa0b981ef5",
+    "scripts/verify-fast": "b762243a301f78457f48e55277ac570c9020f323df67ecf19ecaea80eac33565"
+  },
+  "repository": "rockyroad",
+  "version": "1.1.0",
+  "workspace": "rockyroad-engineering"
+}
