@@ -178,3 +178,4 @@ class HealthResponse(BaseModel):
     data_version: str | None = None
     detail: str | None = None
     bounds: list[float] | None = None
+    profile: str | None = None

@@ -5,6 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from rockyroad_api.db import Database
+from rockyroad_api.geo import extract_bounds, extract_coverage_hint, extract_profile, point_in_extract
 from rockyroad_api.models import (
     RouteResponse,
     SavedPlaceIn,
@@ -130,9 +131,17 @@ def get_trip(db: Database, trip_id: UUID) -> TripOut | None:
     return db.read(_read)
 
 
-def create_trip(db: Database, payload: TripCreate) -> TripOut:
-    for stop in payload.stops:
+def _validate_stops(db: Database, stops: list[StopIn]) -> None:
+    bounds = extract_bounds(db.settings.osm_dir)
+    hint = extract_coverage_hint(extract_profile(db.settings.osm_dir))
+    for stop in stops:
         stop.validate_location()
+        if not point_in_extract(stop.lon, stop.lat, bounds):
+            raise ValueError(f"{stop.name} is outside the local OSM extract. {hint}")
+
+
+def create_trip(db: Database, payload: TripCreate) -> TripOut:
+    _validate_stops(db, payload.stops)
     trip_id = uuid.uuid4()
 
     def _write(conn: Any) -> None:
@@ -203,6 +212,10 @@ def route_trip(db: Database, client: ValhallaClient, trip_id: UUID) -> RouteResp
         raise RoutingError("trip not found", status_code=404)
     if len(trip.stops) < 2:
         raise RoutingError("at least two stops are required to build a route", status_code=400)
+    try:
+        _validate_stops(db, _as_stop_in(trip.stops))
+    except ValueError as exc:
+        raise RoutingError(str(exc), status_code=422) from exc
     version = routing_data_version(db.settings)
     key = cache_key(trip.stops, trip.settings, version)
     cached = db.read(lambda conn: load_cached_route(conn, trip_id, key))

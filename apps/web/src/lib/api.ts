@@ -9,6 +9,7 @@ import type {
   TripSettings,
   TripSummary,
 } from "./types";
+import { coverageHint } from "./mapCamera";
 
 export function formatApiErrorDetail(detail: unknown): string | undefined {
   if (typeof detail === "string" && detail.trim()) {
@@ -31,6 +32,16 @@ export function formatApiErrorDetail(detail: unknown): string | undefined {
     return JSON.stringify(detail);
   }
   return undefined;
+}
+
+export function formatRoutingError(message: string, profile?: string | null): string {
+  if (message.includes("No suitable edges near location") || /"error_code"\s*:\s*171/.test(message)) {
+    const extra = coverageHint(profile);
+    return extra
+      ? `No roads near those stops in the local Valhalla graph. ${extra}`
+      : "No roads near those stops in the local Valhalla graph.";
+  }
+  return message;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

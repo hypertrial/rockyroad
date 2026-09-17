@@ -5,7 +5,13 @@ from uuid import uuid4
 
 from rockyroad_api.models import StopOut, TripSettingsOut
 from rockyroad_api.polyline import decode_polyline
-from rockyroad_api.routing import cache_key, parse_optimized_order, parse_valhalla, valhalla_payload
+from rockyroad_api.routing import (
+    cache_key,
+    parse_optimized_order,
+    parse_valhalla,
+    routing_failure_message,
+    valhalla_payload,
+)
 
 
 def _stop(name: str, lon: float, lat: float, position: int) -> StopOut:
@@ -57,6 +63,26 @@ def test_valhalla_payload_encodes_avoid_options() -> None:
     body = valhalla_payload(stops, settings, optimized=False)
     assert body["alternates"] == 2
     assert body["costing_options"]["auto"] == {"use_highways": 0.0, "use_tolls": 0.0, "use_ferry": 0.0}
+    assert body["locations"][0]["radius"] == 5000
+    assert body["locations"][0]["minimum_reachability"] == 0
+
+
+def test_routing_failure_message_explains_missing_edges() -> None:
+    sample = routing_failure_message(
+        400,
+        '{"error_code":171,"error":"No suitable edges near location"}',
+        profile="sample",
+    )
+    continental = routing_failure_message(
+        400,
+        '{"error_code":171,"error":"No suitable edges near location"}',
+        profile="canada-usa",
+    )
+    assert "Prince Edward Island" in sample
+    assert "171" not in sample
+    assert "canada-usa" in continental
+    assert "Prince Edward Island" not in continental
+    assert "no details" in routing_failure_message(503, "")
 
 
 def test_decode_and_parse_valhalla() -> None:

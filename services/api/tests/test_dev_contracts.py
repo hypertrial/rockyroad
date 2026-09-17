@@ -6,7 +6,9 @@ from rockyroad_data.paths import REPO_ROOT
 def test_dev_script_probes_pmtiles_with_a_byte_range() -> None:
     script = (REPO_ROOT / "scripts" / "dev").read_text(encoding="utf-8")
     assert '-r 0-0 "http://127.0.0.1:8000/maps/north-america.pmtiles"' in script
+    assert "%{http_code}" in script
     assert 'curl -sf -o /dev/null "http://127.0.0.1:8000/maps/north-america.pmtiles"' not in script
+    assert 'curl -sf "http://127.0.0.1:8000/api/ready"' in script
 
 
 def test_caddyfile_does_not_mark_pmtiles_immutable() -> None:

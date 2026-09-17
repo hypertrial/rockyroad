@@ -1,8 +1,23 @@
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from rockyroad_api.db import Database
 from rockyroad_api.models import StopIn, TripCreate, TripSettingsIn, TripUpdate
-from rockyroad_api.trips import apply_optimized_order, create_trip, delete_trip, list_trips, replace_stops, update_trip
+from rockyroad_api.routing import RoutingError
+from rockyroad_api.trips import (
+    apply_optimized_order,
+    create_trip,
+    delete_trip,
+    list_trips,
+    replace_stops,
+    route_trip,
+    update_trip,
+)
+
+CALGARY = StopIn(name="Calgary", lon=-114.07, lat=51.05)
 
 CHARLOTTETOWN = StopIn(name="Charlottetown", lon=-63.131, lat=46.238)
 SUMMERSIDE = StopIn(name="Summerside", lon=-63.79, lat=46.393)
@@ -44,6 +59,40 @@ def test_rejects_overseas_coordinates(db: Database) -> None:
     except ValueError:
         raised = True
     assert raised
+
+
+def test_create_trip_rejects_stops_outside_sample_extract(db: Database) -> None:
+    (db.settings.osm_dir / "manifest.json").write_text(json.dumps({"profile": "sample"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="Prince Edward Island"):
+        create_trip(db, TripCreate(name="Prairie", stops=[CALGARY]))
+
+
+def test_create_trip_outside_canada_usa_does_not_mention_pei(db: Database) -> None:
+    (db.settings.osm_dir / "manifest.json").write_text(json.dumps({"profile": "canada-usa"}), encoding="utf-8")
+    hawaii = StopIn(name="Honolulu", lon=-157.86, lat=21.31)
+    with pytest.raises(ValueError, match="canada-usa") as exc:
+        create_trip(db, TripCreate(name="Pacific", stops=[hawaii]))
+    assert "Prince Edward Island" not in str(exc.value)
+
+
+def test_replace_stops_allows_outside_extract_so_pins_can_be_removed(db: Database) -> None:
+    (db.settings.osm_dir / "manifest.json").write_text(json.dumps({"profile": "sample"}), encoding="utf-8")
+    trip = create_trip(db, TripCreate(name="Cleanup", stops=[CHARLOTTETOWN, SUMMERSIDE]))
+    updated = replace_stops(db, trip.id, [CALGARY, CHARLOTTETOWN])
+    assert updated is not None
+    assert [stop.name for stop in updated.stops] == ["Calgary", "Charlottetown"]
+    cleared = replace_stops(db, trip.id, [CHARLOTTETOWN])
+    assert cleared is not None
+    assert [stop.name for stop in cleared.stops] == ["Charlottetown"]
+
+
+def test_route_trip_rejects_stops_outside_sample_extract(db: Database) -> None:
+    (db.settings.osm_dir / "manifest.json").write_text(json.dumps({"profile": "sample"}), encoding="utf-8")
+    trip = create_trip(db, TripCreate(name="Prairie"))
+    replace_stops(db, trip.id, [CALGARY, StopIn(name="Edmonton", lon=-113.49, lat=53.54)])
+    with pytest.raises(RoutingError, match="Prince Edward Island") as exc:
+        route_trip(db, client=None, trip_id=trip.id)  # type: ignore[arg-type]
+    assert exc.value.status_code == 422
 
 
 def test_settings_and_delete(db: Database) -> None:

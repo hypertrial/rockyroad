@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from rockyroad_api.db import Database
+from rockyroad_data.manifests import read_json
 from rockyroad_data.paths import GEO_MANIFEST, PARQUET_DATASETS
+from rockyroad_data.regions import RegionConfigError, load_regions, profile_bounds
 
 
 def read_manifest(geo_dir: Path) -> dict[str, Any]:
@@ -17,6 +19,36 @@ def read_manifest(geo_dir: Path) -> dict[str, Any]:
         else:
             return {}
     return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
+def extract_profile(osm_dir: Path) -> str | None:
+    profile = read_json(osm_dir / "manifest.json").get("profile")
+    return str(profile) if profile else None
+
+
+def extract_bounds(osm_dir: Path) -> list[float] | None:
+    profile = extract_profile(osm_dir)
+    if not profile:
+        return None
+    try:
+        return profile_bounds(load_regions(), profile)
+    except (OSError, RegionConfigError):
+        return None
+
+
+def extract_coverage_hint(profile: str | None) -> str:
+    if profile == "sample":
+        return "With the sample profile, stay on Prince Edward Island."
+    if profile:
+        return f"Stay inside the {profile} extract."
+    return "Stay inside the downloaded OSM extract."
+
+
+def point_in_extract(lon: float, lat: float, bounds: list[float] | None) -> bool:
+    if bounds is None or len(bounds) != 4:
+        return True
+    west, south, east, north = bounds
+    return west <= lon <= east and south <= lat <= north
 
 
 def current_geo_version(db: Database) -> str | None:

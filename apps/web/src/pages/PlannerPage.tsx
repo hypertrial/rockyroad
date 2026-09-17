@@ -6,8 +6,9 @@ import { MapView } from "../components/MapView";
 import { RouteOptions } from "../components/RouteOptions";
 import { SearchBox } from "../components/SearchBox";
 import { StopList } from "../components/StopList";
-import { api } from "../lib/api";
+import { api, formatRoutingError } from "../lib/api";
 import { formatDistance, formatDuration } from "../lib/format";
+import { coverageHint, pointInExtract } from "../lib/mapCamera";
 import { shouldPersistTripName } from "../lib/tripName";
 import type { PlaceResult, Stop } from "../lib/types";
 import { tripRoute } from "../router";
@@ -22,6 +23,7 @@ export function PlannerPage() {
   const setPanel = useUiStore((state) => state.setPanel);
   const setSelectedStopId = useUiStore((state) => state.setSelectedStopId);
   const tripQuery = useQuery({ queryKey: ["trip", tripId], queryFn: () => api.getTrip(tripId) });
+  const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: false });
 
   useEffect(() => {
     if (search.panel) setPanel(search.panel);
@@ -64,6 +66,10 @@ export function PlannerPage() {
     const index = trip?.settings.selected_alternative ?? 0;
     return trip?.route?.alternatives[index] ?? trip?.route?.alternatives[0] ?? null;
   }, [trip]);
+  const outsideExtract = Boolean(
+    trip?.stops.some((stop) => !pointInExtract(stop.lon, stop.lat, health.data?.bounds ?? null)),
+  );
+  const coverage = coverageHint(health.data?.profile);
 
   const addPlace = (place: PlaceResult) => {
     if (!trip) return;
@@ -124,14 +130,18 @@ export function PlannerPage() {
         {panel === "options" ? <RouteOptions trip={trip} /> : null}
         {panel === "directions" ? <Directions trip={trip} /> : null}
         <div className="stack">
-          <button type="button" onClick={() => routeTrip.mutate()} disabled={trip.stops.length < 2 || routeTrip.isPending}>
+          <button
+            type="button"
+            onClick={() => routeTrip.mutate()}
+            disabled={trip.stops.length < 2 || routeTrip.isPending || outsideExtract}
+          >
             Build route
           </button>
           <button
             type="button"
             className="secondary"
             onClick={() => optimizeTrip.mutate()}
-            disabled={trip.stops.length < 3 || optimizeTrip.isPending}
+            disabled={trip.stops.length < 3 || optimizeTrip.isPending || outsideExtract}
           >
             Optimize stops
           </button>
@@ -143,8 +153,17 @@ export function PlannerPage() {
         ) : (
           <p className="hint">Add at least two stops, then build a route.</p>
         )}
-        {routeTrip.error ? <p className="error">{routeTrip.error.message}</p> : null}
-        {optimizeTrip.error ? <p className="error">{optimizeTrip.error.message}</p> : null}
+        {outsideExtract ? (
+          <p className="error">
+            Some stops are outside the downloaded map.{coverage ? ` ${coverage}` : ""}
+          </p>
+        ) : null}
+        {routeTrip.error ? (
+          <p className="error">{formatRoutingError(routeTrip.error.message, health.data?.profile)}</p>
+        ) : null}
+        {optimizeTrip.error ? (
+          <p className="error">{formatRoutingError(optimizeTrip.error.message, health.data?.profile)}</p>
+        ) : null}
       </aside>
       <MapView
         trip={trip}

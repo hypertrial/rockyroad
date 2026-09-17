@@ -39,6 +39,11 @@ cleanup() {
 
 trap cleanup INT TERM EXIT
 
+if curl -sf "http://127.0.0.1:8000/api/ready" >/dev/null 2>&1; then
+  echo "Port 8000 is already in use. Stop the other RockyRoad API and rerun ./scripts/dev."
+  exit 1
+fi
+
 echo "Starting RockyRoad API on http://127.0.0.1:8000"
 uv run rockyroad-api &
 api_pid=$!
@@ -82,8 +87,9 @@ if ! curl -sf "http://127.0.0.1:8002/status" >/dev/null 2>&1; then
   fi
 fi
 
-if ! curl -sf -o /dev/null -r 0-0 "http://127.0.0.1:8000/maps/north-america.pmtiles"; then
-  echo "PMTiles are not built yet (GET /maps/north-america.pmtiles → 404)."
+maps_code="$(curl -sS -o /dev/null -w '%{http_code}' -r 0-0 "http://127.0.0.1:8000/maps/north-america.pmtiles" || true)"
+if [[ "${maps_code}" != "200" && "${maps_code}" != "206" && "${maps_code}" != "304" ]]; then
+  echo "PMTiles are not built yet (GET /maps/north-america.pmtiles → ${maps_code:-failed})."
   echo "  uv run rockyroad-data update-osm --profile sample"
   echo "  uv run rockyroad-data build-map"
   echo "  uv run rockyroad-data build-places"

@@ -9,6 +9,7 @@ from uuid import UUID
 
 import httpx
 
+from rockyroad_api.geo import extract_coverage_hint, extract_profile
 from rockyroad_api.models import (
     Maneuver,
     RouteAlternative,
@@ -26,6 +27,17 @@ class RoutingError(RuntimeError):
     def __init__(self, message: str, status_code: int = 503) -> None:
         super().__init__(message)
         self.status_code = status_code
+
+
+def routing_failure_message(status_code: int, body: str, *, profile: str | None = None) -> str:
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        payload = {}
+    if isinstance(payload, dict) and payload.get("error_code") == 171:
+        return f"No roads near those stops in the local Valhalla graph. {extract_coverage_hint(profile)}"
+    detail = body[:300] if body else "no details"
+    return f"routing data could not produce a path ({status_code}): {detail}"
 
 
 def routing_data_version(settings: Settings) -> str:
@@ -53,6 +65,9 @@ def cache_key(
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+LOCATION_RADIUS_M = 5000
+
+
 def valhalla_payload(stops: list[StopOut], settings: TripSettingsOut, *, optimized: bool) -> dict[str, Any]:
     costing_options = {
         settings.costing: {
@@ -62,7 +77,16 @@ def valhalla_payload(stops: list[StopOut], settings: TripSettingsOut, *, optimiz
         }
     }
     body: dict[str, Any] = {
-        "locations": [{"lat": stop.lat, "lon": stop.lon, "name": stop.name} for stop in stops],
+        "locations": [
+            {
+                "lat": stop.lat,
+                "lon": stop.lon,
+                "name": stop.name,
+                "radius": LOCATION_RADIUS_M,
+                "minimum_reachability": 0,
+            }
+            for stop in stops
+        ],
         "costing": settings.costing,
         "costing_options": costing_options,
         "directions_options": {"units": "kilometers"},
@@ -159,9 +183,12 @@ class ValhallaClient:
         except httpx.HTTPError as exc:
             raise RoutingError("Valhalla routing service is unavailable") from exc
         if response.status_code >= 400:
-            detail = response.text[:300]
             raise RoutingError(
-                f"routing data could not produce a path ({response.status_code}): {detail}",
+                routing_failure_message(
+                    response.status_code,
+                    response.text,
+                    profile=extract_profile(self.settings.osm_dir),
+                ),
                 status_code=422 if response.status_code < 500 else 503,
             )
         return parse_route_computation(response.json())

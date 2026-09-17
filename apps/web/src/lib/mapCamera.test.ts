@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONTINENT_CENTER, CONTINENT_ZOOM, initialMapCamera } from "./mapCamera";
+import { CONTINENT_CENTER, CONTINENT_ZOOM, coverageHint, initialMapCamera, pointInExtract } from "./mapCamera";
 
 const pei = [-64.45, 45.9, -61.9, 47.1];
 
@@ -26,5 +26,25 @@ describe("initialMapCamera", () => {
       center: CONTINENT_CENTER,
       zoom: CONTINENT_ZOOM,
     });
+  });
+});
+
+describe("pointInExtract", () => {
+  it("allows any point when bounds are unknown", () => {
+    expect(pointInExtract(-114.07, 51.05, null)).toBe(true);
+  });
+
+  it("keeps PEI points and rejects the rest of the continent", () => {
+    expect(pointInExtract(-63.13, 46.24, pei)).toBe(true);
+    expect(pointInExtract(-114.07, 51.05, pei)).toBe(false);
+  });
+});
+
+describe("coverageHint", () => {
+  it("names PEI only for the sample profile", () => {
+    expect(coverageHint("sample")).toMatch(/Prince Edward Island/);
+    expect(coverageHint("canada-usa")).toMatch(/canada-usa/);
+    expect(coverageHint("canada-usa")).not.toMatch(/Prince Edward Island/);
+    expect(coverageHint(null)).toBe("");
   });
 });

@@ -99,6 +99,7 @@ export type HealthResponse = {
   data_version: string | null;
   detail: string | null;
   bounds: number[] | null;
+  profile: string | null;
 };
 
 export type PlannerSearch = {

@@ -2,9 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import maplibregl from "maplibre-gl";
 import { Protocol } from "pmtiles";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
-import { initialMapCamera } from "../lib/mapCamera";
+import { coverageHint, initialMapCamera, pointInExtract } from "../lib/mapCamera";
 import { syncTripRouteLayer, type RouteMap } from "../lib/mapRouteLayer";
 import { plannerMapStyle } from "../lib/mapStyle";
 import type { Trip } from "../lib/types";
@@ -43,6 +43,12 @@ export function MapView({ trip, onAddStop }: Props) {
   const selected = trip.route?.alternatives[trip.settings.selected_alternative] ?? trip.route?.alternatives[0];
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
+  const [clickHint, setClickHint] = useState<string | null>(null);
+  const bounds = health.data?.bounds ?? null;
+  const boundsRef = useRef(bounds);
+  boundsRef.current = bounds;
+  const profileRef = useRef(health.data?.profile ?? null);
+  profileRef.current = health.data?.profile ?? null;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current || health.isPending) return;
@@ -67,7 +73,16 @@ export function MapView({ trip, onAddStop }: Props) {
         setMapReady(false);
       }
     });
-    map.on("click", (event) => addStopRef.current(event.lngLat.lng, event.lngLat.lat));
+    map.on("click", (event) => {
+      const { lng, lat } = event.lngLat;
+      if (!pointInExtract(lng, lat, boundsRef.current)) {
+        const extra = coverageHint(profileRef.current);
+        setClickHint(extra ? `Click inside the downloaded map. ${extra}` : "Click inside the downloaded map.");
+        return;
+      }
+      setClickHint(null);
+      addStopRef.current(lng, lat);
+    });
     map.on("moveend", () => {
       const center = map.getCenter();
       const bounds = map.getBounds();
@@ -119,8 +134,10 @@ export function MapView({ trip, onAddStop }: Props) {
       <div ref={containerRef} className="map-canvas" role="application" aria-label="Trip map" />
       {!mapsAvailable ? (
         <div className="map-banner">{health.data?.detail ?? "Local PMTiles are missing."}</div>
+      ) : clickHint ? (
+        <div className="map-banner">{clickHint}</div>
       ) : null}
-      <div className="map-legend">Click the map to drop a stop. Nothing is sent to the cloud.</div>
+      <div className="map-legend">Click inside the downloaded map to drop a stop. Nothing is sent to the cloud.</div>
     </div>
   );
 }

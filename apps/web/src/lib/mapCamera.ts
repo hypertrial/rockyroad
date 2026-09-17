@@ -12,6 +12,18 @@ function isSampleSized(bounds: number[]): boolean {
   return east - west < 10 && north - south < 10;
 }
 
+export function pointInExtract(lon: number, lat: number, bounds: HealthResponse["bounds"]): boolean {
+  if (!bounds || bounds.length !== 4) return true;
+  const [west, south, east, north] = bounds;
+  return lon >= west && lon <= east && lat >= south && lat <= north;
+}
+
+export function coverageHint(profile: HealthResponse["profile"] | undefined): string {
+  if (profile === "sample") return "With the sample extract, stay on Prince Edward Island.";
+  if (profile) return `Stay inside the ${profile} extract.`;
+  return "";
+}
+
 export function initialMapCamera(search: PlannerSearch, bounds: HealthResponse["bounds"]): MapCamera {
   const urlReady = search.lat !== undefined && search.lng !== undefined && search.z !== undefined;
   if (bounds && bounds.length === 4 && (!urlReady || ((search.z ?? 0) < 5 && isSampleSized(bounds)))) {

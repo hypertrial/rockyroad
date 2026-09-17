@@ -1,25 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Request
 
-from rockyroad_api.geo import current_geo_version, import_geo_if_changed
+from rockyroad_api.geo import current_geo_version, extract_bounds, extract_profile, import_geo_if_changed
 from rockyroad_api.models import HealthResponse
-from rockyroad_data.manifests import read_json
-from rockyroad_data.regions import RegionConfigError, load_regions, profile_bounds
 
 router = APIRouter(tags=["health"])
-
-
-def extract_bounds(osm_dir: Path) -> list[float] | None:
-    osm_profile = read_json(osm_dir / "manifest.json").get("profile")
-    if not osm_profile:
-        return None
-    try:
-        return profile_bounds(load_regions(), str(osm_profile))
-    except (OSError, RegionConfigError):
-        return None
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -52,6 +38,7 @@ def health(request: Request) -> HealthResponse:
         data_version=current_geo_version(db),
         detail=detail,
         bounds=bounds,
+        profile=extract_profile(settings.osm_dir),
     )
 
 

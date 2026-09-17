@@ -72,7 +72,7 @@ Restore by replacing the same paths and restarting Compose. Trip tables live onl
 ./scripts/dev
 ```
 
-That starts FastAPI on `:8000`, waits until `/api/health` responds, then starts Vite on `:5173`. Vite proxies `/api` and `/maps` to the API, which serves `data/maps` with byte ranges. `/api/health` includes extract `bounds` from the OSM profile so the planner can frame a sample PEI map instead of a blank continental view. Routing still needs a graph plus Valhalla on `:8002`; `uv run rockyroad-data build-routing && docker compose up -d valhalla` builds the graph (host tools or Docker) and publishes the service on localhost for the host API. If the repo path contains a space, Docker Desktop cannot bind-mount `data/routing/valhalla`; `build-routing` stages tiles under `~/.cache/rockyroad/valhalla` and Compose should set `ROCKYROAD_VALHALLA_FILES` to that directory.
+That starts FastAPI on `:8000`, waits until `/api/health` responds, then starts Vite on `:5173`. It exits if another RockyRoad API is already answering `/api/ready` on `:8000`. Vite proxies `/api` and `/maps` to the API, which serves `data/maps` with byte ranges. `/api/health` includes the OSM `profile` and extract `bounds` so the planner can frame a sample PEI map instead of a blank continental view. Map clicks and **Build route** stay inside those bounds; the `sample` graph only has roads on Prince Edward Island. Routing still needs a graph plus Valhalla on `:8002`; `uv run rockyroad-data build-routing && docker compose up -d valhalla` builds the graph (host tools or Docker) and publishes the service on localhost for the host API. If the repo path contains a space, Docker Desktop cannot bind-mount `data/routing/valhalla`; `build-routing` stages tiles under `~/.cache/rockyroad/valhalla` and Compose should set `ROCKYROAD_VALHALLA_FILES` to that directory.
 
 ## Offline verification
 
@@ -102,5 +102,6 @@ If you publish a map produced from this pipeline, keep OSM attribution visible. 
 | `update-osm` rejects an extract | Path is not allow-listed | Add it under `config/regions.yaml` |
 | Blank map | Missing PMTiles | `build-map`, then confirm `/maps/north-america.pmtiles` |
 | Route 503 | Valhalla graph missing or service down | `build-routing`, then `docker compose up -d valhalla`. If the repo path has a space, set `ROCKYROAD_VALHALLA_FILES` to the path printed by `build-routing` |
+| Route 422 / no roads near stops | Pins are outside the downloaded extract (`sample` is PEI-only) | Drop stops inside `/api/health` `bounds`, or rebuild with `update-osm --profile canada-usa` plus `build-map`, `build-routing`, and `build-places` |
 | Empty search | Parquet not imported | `uv run rockyroad-data build-places` (host osmium or Docker), then restart the API or `POST /api/admin/import-geo` |
 | DuckDB extension download | Image was built without `INSTALL spatial/fts` | Rebuild `infra/api/Dockerfile` |
