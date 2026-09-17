@@ -1,11 +1,6 @@
 # Generated geographic artifacts
 data/**
 !data/.gitkeep
-!data/geo/.gitkeep
-!data/maps/.gitkeep
-!data/osm/.gitkeep
-!data/routing/.gitkeep
-!data/routing/valhalla/.gitkeep
 
 # Python
 .venv/
