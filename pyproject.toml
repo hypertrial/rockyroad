@@ -1,7 +1,7 @@
 [project]
 name = "rockyroad"
 version = "0.1.0"
-description = "Self-hosted, local-first Canada + USA road-trip planner"
+description = "Canada + USA road-trip planner with hosted OpenFreeMap/ORS/Photon and a local PEI fallback"
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "MIT" }

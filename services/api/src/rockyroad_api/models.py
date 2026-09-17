@@ -179,3 +179,8 @@ class HealthResponse(BaseModel):
     detail: str | None = None
     bounds: list[float] | None = None
     profile: str | None = None
+    provider_mode: Literal["hosted", "local"] = "local"
+    map_style_url: str | None = None
+    map_provider: str | None = None
+    routing_provider: str | None = None
+    search_provider: str | None = None

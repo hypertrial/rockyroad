@@ -5,7 +5,13 @@ from typing import Any
 from uuid import UUID
 
 from rockyroad_api.db import Database
-from rockyroad_api.geo import extract_bounds, extract_coverage_hint, extract_profile, point_in_extract
+from rockyroad_api.geo import (
+    extract_bounds,
+    extract_coverage_hint,
+    extract_profile,
+    hosted_bounds,
+    point_in_extract,
+)
 from rockyroad_api.models import (
     RouteResponse,
     SavedPlaceIn,
@@ -19,9 +25,10 @@ from rockyroad_api.models import (
     TripSummary,
     TripUpdate,
 )
+from rockyroad_api.ors import MAX_ORS_STOPS
+from rockyroad_api.providers import RouteProvider
 from rockyroad_api.routing import (
     RoutingError,
-    ValhallaClient,
     cache_key,
     load_cached_route,
     persist_route,
@@ -131,7 +138,17 @@ def get_trip(db: Database, trip_id: UUID) -> TripOut | None:
     return db.read(_read)
 
 
-def _validate_stops(db: Database, stops: list[StopIn]) -> None:
+def _validate_stops(db: Database, stops: list[StopIn], *, for_route: bool = False) -> None:
+    if db.settings.hosted:
+        hint = extract_coverage_hint(None, hosted=True)
+        bounds = hosted_bounds()
+        if for_route and len(stops) > MAX_ORS_STOPS:
+            raise ValueError(f"OpenRouteService accepts at most {MAX_ORS_STOPS} stops.")
+        for stop in stops:
+            stop.validate_location()
+            if not point_in_extract(stop.lon, stop.lat, bounds):
+                raise ValueError(f"{stop.name} is outside Canada and the USA coverage. {hint}")
+        return
     bounds = extract_bounds(db.settings.osm_dir)
     hint = extract_coverage_hint(extract_profile(db.settings.osm_dir))
     for stop in stops:
@@ -206,14 +223,14 @@ def delete_trip(db: Database, trip_id: UUID) -> bool:
     return True
 
 
-def route_trip(db: Database, client: ValhallaClient, trip_id: UUID) -> RouteResponse:
+def route_trip(db: Database, client: RouteProvider, trip_id: UUID) -> RouteResponse:
     trip = get_trip(db, trip_id)
     if trip is None:
         raise RoutingError("trip not found", status_code=404)
     if len(trip.stops) < 2:
         raise RoutingError("at least two stops are required to build a route", status_code=400)
     try:
-        _validate_stops(db, _as_stop_in(trip.stops))
+        _validate_stops(db, _as_stop_in(trip.stops), for_route=True)
     except ValueError as exc:
         raise RoutingError(str(exc), status_code=422) from exc
     version = routing_data_version(db.settings)

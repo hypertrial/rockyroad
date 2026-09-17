@@ -1,22 +1,52 @@
-# RockyRoad data builds
+# RockyRoad data and hosted providers
 
-RockyRoad never talks to hosted map or geocoder APIs at runtime. Geographic artifacts are built once, stored under `data/`, and served locally.
+The default `ROCKYROAD_PROVIDER_MODE=hosted` planner does not require a Canada+USA OSM extract. The browser loads OpenFreeMap Liberty tiles. FastAPI proxies search to Photon and routing/optimization to OpenRouteService. Large local `canada-usa` artifacts are optional.
+
+`local` mode is selected explicitly before startup. It never talks to hosted map or geocoder APIs at runtime. Geographic artifacts are built once, stored under `data/`, and served locally.
 
 ```text
-OSM PBF
-├─→ Planetiler → data/maps/north-america.pmtiles
-├─→ Valhalla → data/routing/valhalla/
-└─→ Osmium + Polars → data/geo/*.parquet → DuckDB (API-owned)
+hosted:
+  Browser → OpenFreeMap tiles
+  FastAPI → Photon search
+  FastAPI → OpenRouteService directions + VROOM optimization
+
+local:
+  OSM PBF
+  ├─→ Planetiler → data/maps/north-america.pmtiles
+  ├─→ Valhalla → data/routing/valhalla/
+  └─→ Osmium + Polars → data/geo/*.parquet → DuckDB (API-owned)
 ```
 
-## Profiles
+## Hosted providers
+
+Set `ROCKYROAD_ORS_API_KEY` from [openrouteservice.org](https://openrouteservice.org/). Optional overrides:
+
+| Variable | Default |
+| --- | --- |
+| `ROCKYROAD_ORS_BASE_URL` | `https://api.heigit.org/openrouteservice` |
+| `ROCKYROAD_ORS_OPTIMIZATION_URL` | `https://api.heigit.org/vroom/v0/optimization` |
+| `ROCKYROAD_PHOTON_URL` | `https://photon.komoot.io` |
+| `ROCKYROAD_PHOTON_USER_AGENT` | identifying RockyRoad User-Agent |
+| `ROCKYROAD_OPENFREEMAP_STYLE_URL` | `https://tiles.openfreemap.org/styles/liberty` |
+
+These services have no SLA. Personal use only.
+
+- OpenRouteService free plan: about 2,000 directions/day, 500 optimizations/day, 50 waypoints, 6,000 km driving routes. Alternative routes are limited to 100 km, so RockyRoad returns one hosted route. VROOM stop ordering uses the standard driving profile; the follow-up directions request applies RockyRoad avoid-toll/highway/ferry options.
+- Photon public demo: reasonable-use, no guarantee. RockyRoad identifies itself with a User-Agent, caches results, and biases toward the current map center without clipping the query to the viewport.
+- OpenFreeMap: donation-funded public tiles, no API key.
+
+The OpenRouteService key never leaves the API process. It is not included in `/api/health`, frontend assets, or error text.
+
+Switching to `local` requires a restart (`ROCKYROAD_PROVIDER_MODE=local`). There is no automatic failover.
+
+## Local profiles
 
 `config/regions.yaml` is an allow-list. `update-osm` refuses any extract that is not listed.
 
 | Profile | Extracts | Use |
 | --- | --- | --- |
 | `sample` (default) | Prince Edward Island | Local development and CI-sized vertical slice |
-| `canada-usa` | `north-america/canada`, `north-america/us` | Full coverage |
+| `canada-usa` | `north-america/canada`, `north-america/us` | Full local coverage; hosted mode is the recommended alternative |
 
 ```bash
 uv run rockyroad-data update-osm --profile sample
@@ -27,7 +57,7 @@ uv run rockyroad-data build-places
 
 ## Expected size and time
 
-These are order-of-magnitude numbers; hardware and Geofabrik freshness change them.
+These are order-of-magnitude numbers; hardware and Geofabrik freshness change them. Hosted mode does not need these builds.
 
 | Profile | Download | PMTiles | Valhalla tiles | Parquet | RAM | Wall time |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -48,9 +78,9 @@ Planetiler is also available as `infra/map/Dockerfile` if you prefer a container
 
 Each command writes a versioned `manifest.json` next to its artifacts and replaces files atomically (`*.tmp` then rename).
 
-The API imports Parquet on startup and through `POST /api/admin/import-geo`. Import swaps into a staging table, rebuilds the FTS index, then replaces `geo_features`. If the new manifest is incomplete, the previous searchable dataset stays in place.
+The API imports Parquet on local-mode startup and through `POST /api/admin/import-geo`. Import swaps into a staging table, rebuilds the FTS index, then replaces `geo_features`. If the new manifest is incomplete, the previous searchable dataset stays in place.
 
-To roll back a build, restore the previous `data/geo`, `data/maps`, or `data/routing/valhalla` directory and restart the API. Route geometry cache keys include the Valhalla data version, so old legs are recomputed automatically.
+To roll back a local build, restore the previous `data/geo`, `data/maps`, or `data/routing/valhalla` directory and restart the API. Route geometry cache keys include the routing data version (`ors-v1` when hosted, the Valhalla manifest when local), so old legs are recomputed automatically.
 
 ## Backup and restore
 
@@ -72,36 +102,43 @@ Restore by replacing the same paths and restarting Compose. Trip tables live onl
 ./scripts/dev
 ```
 
-That starts FastAPI on `:8000`, waits until `/api/health` responds, then starts Vite on `:5173`. It exits if another RockyRoad API is already answering `/api/ready` on `:8000`. Vite proxies `/api` and `/maps` to the API, which serves `data/maps` with byte ranges. `/api/health` includes the OSM `profile` and extract `bounds` so the planner can frame a sample PEI map instead of a blank continental view. Map clicks and **Build route** stay inside those bounds; the `sample` graph only has roads on Prince Edward Island. Routing still needs a graph plus Valhalla on `:8002`; `uv run rockyroad-data build-routing && docker compose up -d valhalla` builds the graph (host tools or Docker) and publishes the service on localhost for the host API. If the repo path contains a space, Docker Desktop cannot bind-mount `data/routing/valhalla`; `build-routing` stages tiles under `~/.cache/rockyroad/valhalla` and Compose should set `ROCKYROAD_VALHALLA_FILES` to that directory.
+That starts FastAPI on `:8000`, waits until `/api/health` responds, then starts Vite on `:5173`. It exits if another RockyRoad API is already answering `/api/ready` on `:8000`. Vite proxies `/api` and `/maps` to the API.
+
+Hosted `/api/health` reports `provider_mode`, OpenFreeMap `map_style_url`, Canada+USA `bounds`, and whether `ROCKYROAD_ORS_API_KEY` is present. It does not probe third parties on every request.
+
+Local mode still serves `data/maps` with byte ranges and frames a sample PEI map from extract `bounds`. Map clicks and **Build route** stay inside those bounds. Routing needs a graph plus Valhalla on `:8002`; `uv run rockyroad-data build-routing && docker compose --profile local up -d valhalla` builds the graph and publishes the service. If the repo path contains a space, Docker Desktop cannot bind-mount `data/routing/valhalla`; `build-routing` stages tiles under `~/.cache/rockyroad/valhalla` and Compose should set `ROCKYROAD_VALHALLA_FILES` to that directory.
 
 ## Offline verification
 
-After artifacts exist:
+After local artifacts exist:
 
-1. Local: `./scripts/dev` and open `http://127.0.0.1:5173`
-2. Assembled: `pnpm build && docker compose up --build`
-3. Confirm `GET http://127.0.0.1:8000/api/health` or `http://127.0.0.1:8080/api/health` reports local DuckDB, geo, maps, and routing.
-4. Recreate the assembled stack with no public egress (`internal: true` on the Compose network, no extra ports except 8080).
-5. Create a trip, search a local place, add two stops, build a route, restart the API, and confirm the trip is still present.
-
-The runtime containers must not contain Mapbox, Google Maps, OpenFreeMap, or other hosted tile URLs. `apps/web/public/map/style.json` points only at `pmtiles:///maps/north-america.pmtiles`.
+1. `ROCKYROAD_PROVIDER_MODE=local ./scripts/dev` and open `http://127.0.0.1:5173`
+2. Assembled: `pnpm build && docker compose --profile local up --build`
+3. Confirm `GET /api/health` reports local DuckDB, geo, maps, and routing.
+4. Create a trip, search a local place, add two PEI stops, build a route, restart the API, and confirm the trip is still present.
 
 ## Attribution and ODbL
 
 - © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/copyright)
+- OpenFreeMap for hosted vector tiles
+- OpenRouteService / HeiGIT and VROOM for hosted routing and stop order
+- Photon / Komoot for hosted search
 - Geofabrik distributes the regional extracts used by `update-osm`
-- Planetiler / OpenMapTiles schema for the vector basemap
-- Valhalla for routing
+- Planetiler / OpenMapTiles schema for the local vector basemap
+- Valhalla for local routing
 
-If you publish a map produced from this pipeline, keep OSM attribution visible. Produced tiles, graphs, and Parquet inherit ODbL share-alike obligations.
+Keep OSM attribution visible. Produced tiles, graphs, and Parquet inherit ODbL share-alike obligations.
 
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
+| Hosted health is degraded | Missing `ROCKYROAD_ORS_API_KEY` | Add a key to `.env` and restart |
+| Hosted route 429 | OpenRouteService quota or rate limit | Wait for the rolling window; reuse cached routes |
+| Hosted search 429/503 | Photon throttle or outage | Wait and retry; results are cached after the first success |
 | `update-osm` rejects an extract | Path is not allow-listed | Add it under `config/regions.yaml` |
-| Blank map | Missing PMTiles | `build-map`, then confirm `/maps/north-america.pmtiles` |
-| Route 503 | Valhalla graph missing or service down | `build-routing`, then `docker compose up -d valhalla`. If the repo path has a space, set `ROCKYROAD_VALHALLA_FILES` to the path printed by `build-routing` |
-| Route 422 / no roads near stops | Pins are outside the downloaded extract (`sample` is PEI-only) | Drop stops inside `/api/health` `bounds`, or rebuild with `update-osm --profile canada-usa` plus `build-map`, `build-routing`, and `build-places` |
-| Empty search | Parquet not imported | `uv run rockyroad-data build-places` (host osmium or Docker), then restart the API or `POST /api/admin/import-geo` |
+| Blank local map | Missing PMTiles | `build-map`, then confirm `/maps/north-america.pmtiles` |
+| Local route 503 | Valhalla graph missing or service down | `build-routing`, then `docker compose --profile local up -d valhalla`. If the repo path has a space, set `ROCKYROAD_VALHALLA_FILES` |
+| Local route 422 / no roads near stops | Pins are outside the downloaded extract (`sample` is PEI-only) | Drop stops inside `/api/health` `bounds`, switch to hosted mode, or rebuild with `update-osm --profile canada-usa` |
+| Empty local search | Parquet not imported | `uv run rockyroad-data build-places` (host osmium or Docker), then restart the API or `POST /api/admin/import-geo` |
 | DuckDB extension download | Image was built without `INSTALL spatial/fts` | Rebuild `infra/api/Dockerfile` |

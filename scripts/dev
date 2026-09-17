@@ -44,6 +44,8 @@ if curl -sf "http://127.0.0.1:8000/api/ready" >/dev/null 2>&1; then
   exit 1
 fi
 
+export PYTHONPATH="$root/services/api/src${PYTHONPATH:+:$PYTHONPATH}"
+
 echo "Starting RockyRoad API on http://127.0.0.1:8000"
 uv run rockyroad-api &
 api_pid=$!
@@ -70,36 +72,57 @@ echo "Starting RockyRoad web on http://127.0.0.1:5173"
 pnpm dev &
 web_pid=$!
 
-if ! curl -sf "http://127.0.0.1:8002/status" >/dev/null 2>&1; then
-  echo "Valhalla is not on :8002. Routes will fail until routing tiles are served."
-  echo "Build them with: uv run rockyroad-data build-routing"
-  if docker compose version >/dev/null 2>&1; then
-    compose_cmd="docker compose"
-  elif command -v docker-compose >/dev/null 2>&1; then
-    compose_cmd="docker-compose"
-  else
-    compose_cmd="docker compose"
-  fi
-  echo "Then publish Valhalla to the host with: ${compose_cmd} up -d valhalla"
-  if [[ "$root" == *" "* ]]; then
-    echo "This repo path has a space; Compose must bind a Docker-visible copy:"
-    echo "  export ROCKYROAD_VALHALLA_FILES=\"\$HOME/.cache/rockyroad/valhalla\""
-  fi
+provider_mode="hosted"
+if [[ -f .env ]]; then
+  provider_mode="$(awk -F= '/^ROCKYROAD_PROVIDER_MODE=/{value=$2} END{print value}' .env | tr -d '[:space:]' | tr -d "\"'")"
+  provider_mode="${provider_mode:-hosted}"
 fi
 
-maps_code="$(curl -sS -o /dev/null -w '%{http_code}' -r 0-0 "http://127.0.0.1:8000/maps/north-america.pmtiles" || true)"
-if [[ "${maps_code}" != "200" && "${maps_code}" != "206" && "${maps_code}" != "304" ]]; then
-  echo "PMTiles are not built yet (GET /maps/north-america.pmtiles → ${maps_code:-failed})."
-  echo "  uv run rockyroad-data update-osm --profile sample"
-  echo "  uv run rockyroad-data build-map"
-  echo "  uv run rockyroad-data build-places"
+if [[ "$provider_mode" == "local" ]]; then
+  if ! curl -sf "http://127.0.0.1:8002/status" >/dev/null 2>&1; then
+    echo "Valhalla is not on :8002. Routes will fail until routing tiles are served."
+    echo "Build them with: uv run rockyroad-data build-routing"
+    if docker compose version >/dev/null 2>&1; then
+      compose_cmd="docker compose"
+    elif command -v docker-compose >/dev/null 2>&1; then
+      compose_cmd="docker-compose"
+    else
+      compose_cmd="docker compose"
+    fi
+    echo "Then publish Valhalla to the host with: ${compose_cmd} --profile local up -d valhalla"
+    if [[ "$root" == *" "* ]]; then
+      echo "This repo path has a space; Compose must bind a Docker-visible copy:"
+      echo "  export ROCKYROAD_VALHALLA_FILES=\"\$HOME/.cache/rockyroad/valhalla\""
+    fi
+  fi
+
+  maps_code="$(curl -sS -o /dev/null -w '%{http_code}' -r 0-0 "http://127.0.0.1:8000/maps/north-america.pmtiles" || true)"
+  if [[ "${maps_code}" != "200" && "${maps_code}" != "206" && "${maps_code}" != "304" ]]; then
+    echo "PMTiles are not built yet (GET /maps/north-america.pmtiles → ${maps_code:-failed})."
+    echo "  uv run rockyroad-data update-osm --profile sample"
+    echo "  uv run rockyroad-data build-map"
+    echo "  uv run rockyroad-data build-places"
+  fi
+else
+  ors_key=""
+  if [[ -f .env ]]; then
+    ors_key="$(awk -F= '/^ROCKYROAD_ORS_API_KEY=/{value=$2} END{print value}' .env | tr -d '[:space:]' | tr -d "\"'")"
+  fi
+  if [[ -z "$ors_key" ]]; then
+    echo "Hosted routing needs ROCKYROAD_ORS_API_KEY in .env (https://openrouteservice.org/)."
+  fi
+  echo "Hosted mode uses OpenFreeMap, OpenRouteService, and Photon. Set ROCKYROAD_PROVIDER_MODE=local for the PEI offline stack."
 fi
 
 echo
 echo "RockyRoad is running."
 echo "  App  http://127.0.0.1:5173"
 echo "  API  http://127.0.0.1:8000/api/health"
-echo "  Maps http://127.0.0.1:8000/maps/north-america.pmtiles"
+if [[ "$provider_mode" == "local" ]]; then
+  echo "  Maps http://127.0.0.1:8000/maps/north-america.pmtiles"
+else
+  echo "  Map  OpenFreeMap Liberty (see /api/health map_style_url)"
+fi
 echo
 
 wait "$api_pid" "$web_pid"

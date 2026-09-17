@@ -32,9 +32,13 @@ export function formatApiErrorDetail(detail: unknown): string | undefined {
   return undefined;
 }
 
-export function formatRoutingError(message: string, profile?: string | null): string {
+export function formatRoutingError(
+  message: string,
+  profile?: string | null,
+  providerMode?: HealthResponse["provider_mode"],
+): string {
   if (message.includes("No suitable edges near location") || /"error_code"\s*:\s*171/.test(message)) {
-    const extra = coverageHint(profile);
+    const extra = coverageHint(profile, providerMode);
     return extra
       ? `No roads near those stops in the local Valhalla graph. ${extra}`
       : "No roads near those stops in the local Valhalla graph.";

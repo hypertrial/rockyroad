@@ -36,3 +36,22 @@ def test_map_image_heap_is_overridable() -> None:
 def test_env_example_documents_planetiler_heap() -> None:
     text = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
     assert "ROCKYROAD_PLANETILER_XMX" in text
+    assert "ROCKYROAD_PROVIDER_MODE=hosted" in text
+    assert "ROCKYROAD_ORS_API_KEY" in text
+
+
+def test_compose_keeps_valhalla_on_local_profile() -> None:
+    text = (REPO_ROOT / "compose.yaml").read_text(encoding="utf-8")
+    assert "ROCKYROAD_PROVIDER_MODE" in text
+    assert 'profiles: ["local"]' in text
+    assert "ROCKYROAD_ORS_API_KEY" in text
+    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "docker compose --profile local config" in ci
+
+
+def test_dev_script_checks_hosted_ors_key() -> None:
+    script = (REPO_ROOT / "scripts" / "dev").read_text(encoding="utf-8")
+    assert "ROCKYROAD_ORS_API_KEY" in script
+    assert "--profile local up -d valhalla" in script
+    assert 'PYTHONPATH="$root/services/api/src' in script
+    assert "OpenFreeMap Liberty" in script

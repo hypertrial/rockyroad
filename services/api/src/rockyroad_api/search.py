@@ -8,6 +8,12 @@ from rockyroad_api.db import Database
 from rockyroad_api.models import PlaceResult, RecentSearchOut, SearchResponse, Viewport
 
 
+class SearchError(RuntimeError):
+    def __init__(self, message: str, status_code: int = 503) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def _haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
     radius = 6371.0
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -139,6 +145,14 @@ def search_places(
         for item in ranked
     ]
     return SearchResponse(query=cleaned, results=results)
+
+
+class LocalPlaceSearch:
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    def search(self, query: str, viewport: Viewport | None = None) -> SearchResponse:
+        return search_places(self.db, query, viewport)
 
 
 def record_recent_search(db: Database, query: str, result_place_id: str | None = None) -> None:

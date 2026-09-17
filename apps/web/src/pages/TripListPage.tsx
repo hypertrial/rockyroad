@@ -8,6 +8,8 @@ export function TripListPage() {
   const [name, setName] = useState("New road trip");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: false });
+  const hosted = health.data?.provider_mode === "hosted";
   const trips = useQuery({ queryKey: ["trips"], queryFn: api.listTrips });
   const create = useMutation({
     mutationFn: () => api.createTrip(name.trim() || "New road trip"),
@@ -20,11 +22,12 @@ export function TripListPage() {
   return (
     <main className="page">
       <section className="hero">
-        <p className="muted">Local-first planner</p>
-        <h1>Pack the cooler. Leave the cloud.</h1>
+        <p className="muted">{hosted ? "Canada + USA planner" : "Local-first planner"}</p>
+        <h1>{hosted ? "Plan the long way around." : "Pack the cooler. Leave the cloud."}</h1>
         <p>
-          RockyRoad plans Canada and USA road trips from data on this machine: OSM places, a
-          self-hosted Valhalla graph, and a local PMTiles map.
+          {hosted
+            ? "RockyRoad plans Canada and USA road trips with OpenFreeMap tiles, Photon search, and OpenRouteService routing. Coordinates leave this machine through the local API."
+            : "RockyRoad plans Canada and USA road trips from data on this machine: OSM places, a self-hosted Valhalla graph, and a local PMTiles map."}
         </p>
         <form
           className="create-row"

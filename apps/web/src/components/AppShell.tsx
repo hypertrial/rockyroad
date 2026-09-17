@@ -9,7 +9,7 @@ export function AppShell() {
       <header className="topbar">
         <Link to="/" className="brand">
           <strong>RockyRoad</strong>
-          <span>Canada + USA, offline</span>
+          <span>{health.data?.provider_mode === "hosted" ? "Canada + USA" : "Canada + USA, offline"}</span>
         </Link>
         <div className="health-pill" role="status">
           {health.data?.detail ?? (health.data?.status === "ok" ? "Ready" : "Checking local data")}

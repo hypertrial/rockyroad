@@ -81,7 +81,7 @@ def trips_replace_stops(request: Request, trip_id: UUID, stops: list[StopIn]) ->
 @router.post("/trips/{trip_id}/route", response_model=RouteResponse)
 def trips_route(request: Request, trip_id: UUID) -> RouteResponse:
     try:
-        return route_trip(request.app.state.db, request.app.state.valhalla, trip_id)
+        return route_trip(request.app.state.db, request.app.state.routing, trip_id)
     except RoutingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -97,7 +97,7 @@ def trips_optimize(request: Request, trip_id: UUID) -> RouteResponse:
         TripUpdate(settings=trip.settings.model_copy(update={"optimize": True})),
     )
     try:
-        return route_trip(request.app.state.db, request.app.state.valhalla, trip_id)
+        return route_trip(request.app.state.db, request.app.state.routing, trip_id)
     except RoutingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 

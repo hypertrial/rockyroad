@@ -1,32 +1,29 @@
 # RockyRoad
 
-Self-hosted, local-first Canada + USA road-trip planner. After geographic data is built, the app runs with no mapping, routing, geocoding, database, or cloud APIs.
+Canada + USA road-trip planner. The default mode uses hosted OpenFreeMap tiles, OpenRouteService routing, and Photon search so you can plan across the continent without building a 60–100 GB local extract. An explicit `local` mode still runs the PEI offline stack from downloaded OSM artifacts.
 
 RockyRoad is a monorepo:
 
 - `apps/web` — React 19, Vite, MapLibre, TanStack Query/Router, Zustand
-- `services/api` — FastAPI, DuckDB (`spatial`, `fts`), Valhalla client, data CLI
-- `data/` — generated artifacts (not committed)
-- `compose.yaml` — Caddy + API + Valhalla on an internal Docker network
+- `services/api` — FastAPI, DuckDB, OpenRouteService/Photon or Valhalla clients, data CLI
+- `data/` — generated local artifacts (not committed)
+- `compose.yaml` — Caddy + API; Valhalla starts only with `--profile local`
 
 ## Quick start
+
+1. Copy `.env.example` to `.env` if needed.
+2. Put a free OpenRouteService key in `ROCKYROAD_ORS_API_KEY` ([openrouteservice.org](https://openrouteservice.org/)).
+3. Start the app:
 
 ```bash
 ./scripts/dev
 ```
 
-The script installs missing Python/frontend dependencies, copies `.env.example` if needed, then starts the API, waits until `/api/health` responds, and only then starts Vite. It exits if another RockyRoad API is already on `:8000`. Open `http://127.0.0.1:5173`. Vite proxies `/api` and `/maps` to FastAPI; PMTiles come from `data/maps`. Routing still needs Valhalla on `:8002` (`docker compose up -d valhalla` after `build-routing`; `docker-compose` works if the plugin is missing). `build-routing` uses host Valhalla tools when they are on PATH, otherwise Docker. If the repo path contains a space, set `ROCKYROAD_VALHALLA_FILES` to the Docker-visible tile directory printed by `build-routing` (typically `~/.cache/rockyroad/valhalla`). The default `sample` extract is Prince Edward Island; inland pins will not route until you rebuild with `--profile canada-usa`.
+The script installs missing Python/frontend dependencies, copies `.env.example` if needed, then starts the API, waits until `/api/health` responds, and only then starts Vite. It exits if another RockyRoad API is already on `:8000`. Open `http://127.0.0.1:5173`. Vite proxies `/api` and `/maps` to FastAPI.
 
-Build the sample Prince Edward Island extract first if you want a real map and local search (needs Java 21+, a local `tools/planetiler.jar`, and Osmium or Docker for `build-places`; multi-region `update-osm` still needs host Osmium to merge):
+Hosted mode is personal/self-hosted use: OpenFreeMap, OpenRouteService, and Photon have no SLA. OpenRouteService’s free plan is about 2,000 directions and 500 optimizations per day. Photon is a best-effort demo and needs an identifying User-Agent. The API keeps the ORS key server-side; the browser only loads OpenFreeMap tiles.
 
-```bash
-uv run rockyroad-data update-osm --profile sample
-uv run rockyroad-data build-map
-uv run rockyroad-data build-routing
-uv run rockyroad-data build-places
-```
-
-Or serve the assembled stack:
+Or serve the assembled hosted stack:
 
 ```bash
 pnpm build
@@ -34,6 +31,23 @@ docker compose up --build
 ```
 
 Open `http://127.0.0.1:8080` with Compose.
+
+## Local / offline PEI mode
+
+Set `ROCKYROAD_PROVIDER_MODE=local` in `.env` before startup. There is no automatic failover. Local mode uses PMTiles, Valhalla, and DuckDB places, and stays inside the downloaded extract (the default `sample` extract is Prince Edward Island).
+
+```bash
+uv run rockyroad-data update-osm --profile sample
+uv run rockyroad-data build-map
+uv run rockyroad-data build-routing
+uv run rockyroad-data build-places
+docker compose --profile local up -d valhalla
+ROCKYROAD_PROVIDER_MODE=local ./scripts/dev
+```
+
+If the repo path contains a space, set `ROCKYROAD_VALHALLA_FILES` to the Docker-visible tile directory printed by `build-routing` (typically `~/.cache/rockyroad/valhalla`).
+
+A full local `canada-usa` extract is optional and large. Hosted mode is the supported way to cover Canada and the USA without that build.
 
 ## Commands
 
@@ -45,22 +59,17 @@ uv run rockyroad-data build-places
 uv run rockyroad-data status
 ```
 
-`update-osm` is the only command allowed to use the network. It downloads allow-listed Geofabrik extracts from `config/regions.yaml`. Everything else is offline.
+`update-osm` downloads allow-listed Geofabrik extracts from `config/regions.yaml`. Use these only for local mode.
 
-Full Canada + USA:
-
-```bash
-uv run rockyroad-data update-osm --profile canada-usa
-```
-
-See [docs/data-build.md](docs/data-build.md) for disk/RAM expectations, replacement, rollback, and attribution. For `canada-usa` map builds, set `ROCKYROAD_PLANETILER_XMX=32g` (or similar) so Planetiler can use the machine RAM.
+See [docs/data-build.md](docs/data-build.md) for hosted limits, local disk/RAM expectations, replacement, rollback, and attribution.
 
 ## Runtime rules
 
 - One FastAPI process owns DuckDB writes (`uvicorn --workers 1`).
 - The data CLI never writes `data/rockyroad.duckdb`.
 - Canonical trip state is waypoint coordinates plus routing settings. Cached geometry is disposable.
-- MapLibre loads only `/maps/north-america.pmtiles` and `/map/style.json`. There is no Mapbox, Google, or OpenFreeMap fallback.
+- Hosted mode: MapLibre loads OpenFreeMap Liberty; search and routing go through FastAPI to Photon and OpenRouteService.
+- Local mode: MapLibre loads only `/maps/north-america.pmtiles` and `/map/style.json`.
 
 ## Tests
 

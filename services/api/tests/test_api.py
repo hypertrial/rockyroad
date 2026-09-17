@@ -5,10 +5,15 @@ from unittest.mock import MagicMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
+from rockyroad_api.factory import create_place_search, create_route_provider
 from rockyroad_api.main import create_app
 from rockyroad_api.models import Maneuver, RouteAlternative
-from rockyroad_api.routing import RouteComputation
+from rockyroad_api.ors import OpenRouteServiceClient
+from rockyroad_api.photon import PhotonSearch
+from rockyroad_api.routing import RouteComputation, ValhallaClient
+from rockyroad_api.search import LocalPlaceSearch
 from rockyroad_api.settings import Settings
 
 
@@ -69,13 +74,13 @@ def test_route_uses_valhalla_and_caches(client: TestClient) -> None:
     )
     app = client.app
     assert isinstance(app, FastAPI)
-    app.state.valhalla.request_route = MagicMock(return_value=RouteComputation(alternatives=[fake]))
+    app.state.routing.request_route = MagicMock(return_value=RouteComputation(alternatives=[fake]))
     first = client.post(f"/api/trips/{trip_id}/route")
     second = client.post(f"/api/trips/{trip_id}/route")
     assert first.status_code == 200
     assert first.json()["cache_hit"] is False
     assert second.json()["cache_hit"] is True
-    assert app.state.valhalla.request_route.call_count == 1
+    assert app.state.routing.request_route.call_count == 1
 
 
 def test_optimize_persists_valhalla_stop_order(client: TestClient) -> None:
@@ -98,7 +103,7 @@ def test_optimize_persists_valhalla_stop_order(client: TestClient) -> None:
     )
     app = client.app
     assert isinstance(app, FastAPI)
-    app.state.valhalla.request_route = MagicMock(
+    app.state.routing.request_route = MagicMock(
         return_value=RouteComputation(alternatives=[fake], optimized_order=[0, 2, 1])
     )
     response = client.post(f"/api/trips/{trip_id}/optimize")
@@ -126,3 +131,76 @@ def test_route_rejects_stops_outside_sample_extract(client: TestClient, settings
     response = client.post(f"/api/trips/{trip_id}/route")
     assert response.status_code == 422
     assert "Prince Edward Island" in response.json()["detail"]
+
+
+def test_hosted_health_reports_providers_without_secrets(settings: Settings) -> None:
+    hosted = settings.model_copy(
+        update={
+            "provider_mode": "hosted",
+            "ors_api_key": SecretStr("should-never-leak"),
+            "openfreemap_style_url": "https://tiles.openfreemap.org/styles/liberty",
+            "photon_url": "https://photon.komoot.io",
+        }
+    )
+    with TestClient(create_app(hosted)) as client:
+        payload = client.get("/api/health").json()
+    assert payload["provider_mode"] == "hosted"
+    assert payload["maps"] is True
+    assert payload["routing"] is True
+    assert payload["geo"] is True
+    assert payload["status"] == "ok"
+    assert payload["map_provider"] == "openfreemap"
+    assert payload["routing_provider"] == "openrouteservice"
+    assert payload["search_provider"] == "photon"
+    assert payload["map_style_url"] == "https://tiles.openfreemap.org/styles/liberty"
+    assert payload["bounds"] == [-168.0, 24.0, -52.0, 83.5]
+    assert payload["profile"] == "canada-usa"
+    assert "should-never-leak" not in str(payload)
+
+
+def test_hosted_health_degrades_without_ors_key(settings: Settings) -> None:
+    hosted = settings.model_copy(update={"provider_mode": "hosted", "ors_api_key": SecretStr("")})
+    with TestClient(create_app(hosted)) as client:
+        payload = client.get("/api/health").json()
+    assert payload["status"] == "degraded"
+    assert payload["routing"] is False
+    assert "ROCKYROAD_ORS_API_KEY" in (payload["detail"] or "")
+
+
+def test_hosted_route_allows_continental_stops_and_caches(settings: Settings) -> None:
+    hosted = settings.model_copy(update={"provider_mode": "hosted", "ors_api_key": SecretStr("test-key")})
+    with TestClient(create_app(hosted)) as client:
+        created = client.post("/api/trips", json={"name": "Prairie"})
+        trip_id = created.json()["id"]
+        updated = client.put(
+            f"/api/trips/{trip_id}/stops",
+            json=[
+                {"name": "Calgary", "lon": -114.07, "lat": 51.05},
+                {"name": "Boston", "lon": -71.06, "lat": 42.36},
+            ],
+        )
+        assert updated.status_code == 200
+        fake = RouteAlternative(
+            index=0,
+            distance_m=4000000,
+            duration_s=140000,
+            geometry={"type": "LineString", "coordinates": [[-114.07, 51.05], [-71.06, 42.36]]},
+            maneuvers=[Maneuver(instruction="Head east", type=1, distance_m=4000000, duration_s=140000)],
+        )
+        app = client.app
+        assert isinstance(app, FastAPI)
+        app.state.routing.request_route = MagicMock(return_value=RouteComputation(alternatives=[fake]))
+        first = client.post(f"/api/trips/{trip_id}/route")
+        second = client.post(f"/api/trips/{trip_id}/route")
+    assert first.status_code == 200
+    assert first.json()["cache_hit"] is False
+    assert first.json()["data_version"] == "ors-v1"
+    assert second.json()["cache_hit"] is True
+
+
+def test_factories_follow_provider_mode(db, settings: Settings) -> None:
+    assert isinstance(create_route_provider(settings), ValhallaClient)
+    assert isinstance(create_place_search(settings, db), LocalPlaceSearch)
+    hosted = settings.model_copy(update={"provider_mode": "hosted", "ors_api_key": SecretStr("k")})
+    assert isinstance(create_route_provider(hosted), OpenRouteServiceClient)
+    assert isinstance(create_place_search(hosted, db), PhotonSearch)

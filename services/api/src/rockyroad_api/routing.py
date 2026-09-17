@@ -41,6 +41,8 @@ def routing_failure_message(status_code: int, body: str, *, profile: str | None 
 
 
 def routing_data_version(settings: Settings) -> str:
+    if settings.hosted:
+        return settings.hosted_routing_version
     manifest = read_json(settings.routing_dir / "manifest.json")
     if not manifest:
         manifest = read_json(ROUTING_MANIFEST)

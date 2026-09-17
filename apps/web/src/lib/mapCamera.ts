@@ -18,7 +18,11 @@ export function pointInExtract(lon: number, lat: number, bounds: HealthResponse[
   return lon >= west && lon <= east && lat >= south && lat <= north;
 }
 
-export function coverageHint(profile: HealthResponse["profile"] | undefined): string {
+export function coverageHint(
+  profile: HealthResponse["profile"] | undefined,
+  providerMode?: HealthResponse["provider_mode"],
+): string {
+  if (providerMode === "hosted") return "Stay inside Canada and the USA.";
   if (profile === "sample") return "With the sample extract, stay on Prince Edward Island.";
   if (profile) return `Stay inside the ${profile} extract.`;
   return "";

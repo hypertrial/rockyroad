@@ -69,7 +69,7 @@ export function PlannerPage() {
   const outsideExtract = Boolean(
     trip?.stops.some((stop) => !pointInExtract(stop.lon, stop.lat, health.data?.bounds ?? null)),
   );
-  const coverage = coverageHint(health.data?.profile);
+  const coverage = coverageHint(health.data?.profile, health.data?.provider_mode);
 
   const addPlace = (place: PlaceResult) => {
     if (!trip) return;
@@ -125,7 +125,7 @@ export function PlannerPage() {
             </button>
           ))}
         </div>
-        {panel === "search" ? <SearchBox onSelect={addPlace} /> : null}
+        {panel === "search" ? <SearchBox onSelect={addPlace} health={health.data} /> : null}
         {panel === "stops" ? <StopList trip={trip} onChange={(stops) => replaceStops.mutate(stops)} /> : null}
         {panel === "options" ? <RouteOptions trip={trip} /> : null}
         {panel === "directions" ? <Directions trip={trip} /> : null}
@@ -155,14 +155,18 @@ export function PlannerPage() {
         )}
         {outsideExtract ? (
           <p className="error">
-            Some stops are outside the downloaded map.{coverage ? ` ${coverage}` : ""}
+            Some stops are outside the current map coverage.{coverage ? ` ${coverage}` : ""}
           </p>
         ) : null}
         {routeTrip.error ? (
-          <p className="error">{formatRoutingError(routeTrip.error.message, health.data?.profile)}</p>
+          <p className="error">
+            {formatRoutingError(routeTrip.error.message, health.data?.profile, health.data?.provider_mode)}
+          </p>
         ) : null}
         {optimizeTrip.error ? (
-          <p className="error">{formatRoutingError(optimizeTrip.error.message, health.data?.profile)}</p>
+          <p className="error">
+            {formatRoutingError(optimizeTrip.error.message, health.data?.profile, health.data?.provider_mode)}
+          </p>
         ) : null}
       </aside>
       <MapView

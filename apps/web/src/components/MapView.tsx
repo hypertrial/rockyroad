@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { coverageHint, initialMapCamera, pointInExtract } from "../lib/mapCamera";
 import { syncTripRouteLayer, type RouteMap } from "../lib/mapRouteLayer";
-import { plannerMapStyle } from "../lib/mapStyle";
+import { plannerMapStyle, usesLocalPmtiles } from "../lib/mapStyle";
 import type { Trip } from "../lib/types";
 import { tripRoute } from "../router";
 import { useUiStore } from "../stores/ui";
@@ -39,24 +39,33 @@ export function MapView({ trip, onAddStop }: Props) {
   const setMapReady = useUiStore((state) => state.setMapReady);
   const setViewport = useUiStore((state) => state.setViewport);
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, retry: false });
+  const healthRef = useRef(health.data);
+  healthRef.current = health.data;
   const mapsAvailable = health.data?.maps === true;
+  const hosted = health.data?.provider_mode === "hosted";
   const selected = trip.route?.alternatives[trip.settings.selected_alternative] ?? trip.route?.alternatives[0];
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const [clickHint, setClickHint] = useState<string | null>(null);
   const bounds = health.data?.bounds ?? null;
+  const boundsKey = bounds?.join(",") ?? "";
+  const mapStyleUrl = health.data?.map_style_url ?? "";
+  const providerMode = health.data?.provider_mode ?? "";
   const boundsRef = useRef(bounds);
   boundsRef.current = bounds;
   const profileRef = useRef(health.data?.profile ?? null);
   profileRef.current = health.data?.profile ?? null;
+  const modeRef = useRef(health.data?.provider_mode);
+  modeRef.current = health.data?.provider_mode;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current || health.isPending) return;
-    if (mapsAvailable) ensurePmtilesProtocol();
-    const camera = initialMapCamera(initialSearchRef.current, health.data?.bounds ?? null);
+    const payload = healthRef.current;
+    if (usesLocalPmtiles(payload)) ensurePmtilesProtocol();
+    const camera = initialMapCamera(initialSearchRef.current, payload?.bounds ?? null);
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: plannerMapStyle(mapsAvailable),
+      style: plannerMapStyle(payload),
       ...(camera.kind === "center"
         ? { center: camera.center, zoom: camera.zoom }
         : { bounds: camera.bounds, fitBoundsOptions: { padding: 48, maxZoom: 11 } }),
@@ -76,8 +85,8 @@ export function MapView({ trip, onAddStop }: Props) {
     map.on("click", (event) => {
       const { lng, lat } = event.lngLat;
       if (!pointInExtract(lng, lat, boundsRef.current)) {
-        const extra = coverageHint(profileRef.current);
-        setClickHint(extra ? `Click inside the downloaded map. ${extra}` : "Click inside the downloaded map.");
+        const extra = coverageHint(profileRef.current, modeRef.current);
+        setClickHint(extra ? `Click inside the map coverage. ${extra}` : "Click inside the map coverage.");
         return;
       }
       setClickHint(null);
@@ -108,7 +117,16 @@ export function MapView({ trip, onAddStop }: Props) {
       mapRef.current = null;
       setMapReady(false);
     };
-  }, [health.data?.bounds, health.isPending, mapsAvailable, navigate, setMapReady, setViewport]);
+  }, [
+    boundsKey,
+    health.isPending,
+    mapStyleUrl,
+    mapsAvailable,
+    navigate,
+    providerMode,
+    setMapReady,
+    setViewport,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -133,11 +151,15 @@ export function MapView({ trip, onAddStop }: Props) {
     <div className="map-wrap">
       <div ref={containerRef} className="map-canvas" role="application" aria-label="Trip map" />
       {!mapsAvailable ? (
-        <div className="map-banner">{health.data?.detail ?? "Local PMTiles are missing."}</div>
+        <div className="map-banner">{health.data?.detail ?? "The map source is unavailable."}</div>
       ) : clickHint ? (
         <div className="map-banner">{clickHint}</div>
       ) : null}
-      <div className="map-legend">Click inside the downloaded map to drop a stop. Nothing is sent to the cloud.</div>
+      <div className="map-legend">
+        {hosted
+          ? "Click the map to drop a stop. Map tiles come from OpenFreeMap. Search and routes go through RockyRoad to Photon and OpenRouteService."
+          : "Click inside the downloaded map to drop a stop. Nothing is sent to the cloud."}
+      </div>
     </div>
   );
 }

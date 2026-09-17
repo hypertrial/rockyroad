@@ -36,7 +36,22 @@ def extract_bounds(osm_dir: Path) -> list[float] | None:
         return None
 
 
-def extract_coverage_hint(profile: str | None) -> str:
+HOSTED_PROFILE = "canada-usa"
+HOSTED_COVERAGE_HINT = "Stay inside Canada and the USA."
+HOSTED_BOUNDS_FALLBACK = [-168.0, 24.0, -52.0, 83.5]
+
+
+def hosted_bounds() -> list[float]:
+    try:
+        bounds = profile_bounds(load_regions(), HOSTED_PROFILE)
+    except (OSError, RegionConfigError):
+        return list(HOSTED_BOUNDS_FALLBACK)
+    return bounds if bounds else list(HOSTED_BOUNDS_FALLBACK)
+
+
+def extract_coverage_hint(profile: str | None, *, hosted: bool = False) -> str:
+    if hosted:
+        return HOSTED_COVERAGE_HINT
     if profile == "sample":
         return "With the sample profile, stay on Prince Edward Island."
     if profile:

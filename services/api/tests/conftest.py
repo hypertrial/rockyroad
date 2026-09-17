@@ -28,6 +28,7 @@ def settings(tmp_path: Path) -> Settings:
         osm_dir=osm_dir,
         routing_dir=routing_dir,
         valhalla_url="http://valhalla.test",
+        provider_mode="local",
     )
 
 

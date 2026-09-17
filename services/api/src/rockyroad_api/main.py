@@ -8,9 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from rockyroad_api.db import Database
+from rockyroad_api.factory import create_place_search, create_route_provider
 from rockyroad_api.geo import import_geo_if_changed
 from rockyroad_api.routers import health, search, trips
-from rockyroad_api.routing import ValhallaClient
 from rockyroad_api.settings import Settings, get_settings
 
 
@@ -21,8 +21,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db = Database(config)
         app.state.db = db
-        app.state.valhalla = ValhallaClient(config)
-        import_geo_if_changed(db)
+        app.state.routing = create_route_provider(config)
+        app.state.search = create_place_search(config, db)
+        if not config.hosted:
+            import_geo_if_changed(db)
         try:
             yield
         finally:

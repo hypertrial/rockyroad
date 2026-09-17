@@ -45,6 +45,8 @@ describe("coverageHint", () => {
     expect(coverageHint("sample")).toMatch(/Prince Edward Island/);
     expect(coverageHint("canada-usa")).toMatch(/canada-usa/);
     expect(coverageHint("canada-usa")).not.toMatch(/Prince Edward Island/);
+    expect(coverageHint("canada-usa", "hosted")).toMatch(/Canada and the USA/);
+    expect(coverageHint("canada-usa", "hosted")).not.toMatch(/Prince Edward Island/);
     expect(coverageHint(null)).toBe("");
   });
 });

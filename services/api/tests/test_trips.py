@@ -67,6 +67,20 @@ def test_create_trip_rejects_stops_outside_sample_extract(db: Database) -> None:
         create_trip(db, TripCreate(name="Prairie", stops=[CALGARY]))
 
 
+def test_hosted_create_trip_allows_continental_stops(db: Database) -> None:
+    db.settings = db.settings.model_copy(update={"provider_mode": "hosted"})
+    trip = create_trip(db, TripCreate(name="Prairie", stops=[CALGARY, CHARLOTTETOWN]))
+    assert [stop.name for stop in trip.stops] == ["Calgary", "Charlottetown"]
+
+
+def test_hosted_create_trip_rejects_outside_canada_usa(db: Database) -> None:
+    db.settings = db.settings.model_copy(update={"provider_mode": "hosted"})
+    hawaii = StopIn(name="Honolulu", lon=-157.86, lat=21.31)
+    with pytest.raises(ValueError, match="Canada and the USA") as exc:
+        create_trip(db, TripCreate(name="Pacific", stops=[hawaii]))
+    assert "Prince Edward Island" not in str(exc.value)
+
+
 def test_create_trip_outside_canada_usa_does_not_mention_pei(db: Database) -> None:
     (db.settings.osm_dir / "manifest.json").write_text(json.dumps({"profile": "canada-usa"}), encoding="utf-8")
     hawaii = StopIn(name="Honolulu", lon=-157.86, lat=21.31)

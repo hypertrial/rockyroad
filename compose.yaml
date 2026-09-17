@@ -29,6 +29,12 @@ services:
       ROCKYROAD_ROUTING_DIR: /data/routing/valhalla
       ROCKYROAD_API_HOST: 0.0.0.0
       ROCKYROAD_API_PORT: 8000
+      ROCKYROAD_PROVIDER_MODE: ${ROCKYROAD_PROVIDER_MODE:-hosted}
+      ROCKYROAD_ORS_API_KEY: ${ROCKYROAD_ORS_API_KEY:-}
+      ROCKYROAD_ORS_BASE_URL: ${ROCKYROAD_ORS_BASE_URL:-https://api.heigit.org/openrouteservice}
+      ROCKYROAD_ORS_OPTIMIZATION_URL: ${ROCKYROAD_ORS_OPTIMIZATION_URL:-https://api.heigit.org/vroom/v0/optimization}
+      ROCKYROAD_PHOTON_URL: ${ROCKYROAD_PHOTON_URL:-https://photon.komoot.io}
+      ROCKYROAD_OPENFREEMAP_STYLE_URL: ${ROCKYROAD_OPENFREEMAP_STYLE_URL:-https://tiles.openfreemap.org/styles/liberty}
       VALHALLA_URL: http://valhalla:8002
     volumes:
       - ./data:/data
@@ -42,6 +48,7 @@ services:
       - internal
 
   valhalla:
+    profiles: ["local"]
     image: ghcr.io/valhalla/valhalla-scripted:latest
     environment:
       use_tiles_ignore_pbf: "True"

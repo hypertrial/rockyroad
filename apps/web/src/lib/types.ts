@@ -29,9 +29,9 @@ export type TripSettings = {
   trip_id: string;
   avoid_tolls: boolean;
   avoid_highways: boolean;
+  optimize: boolean;
   avoid_ferries: boolean;
   costing: "auto";
-  optimize: boolean;
   selected_alternative: number;
   updated_at: string;
 };
@@ -80,6 +80,8 @@ export type TripSummary = {
   stop_count: number;
 };
 
+export type ProviderMode = "hosted" | "local";
+
 export type HealthResponse = {
   status: "ok" | "degraded";
   duckdb: boolean;
@@ -90,6 +92,11 @@ export type HealthResponse = {
   detail: string | null;
   bounds: number[] | null;
   profile: string | null;
+  provider_mode: ProviderMode;
+  map_style_url: string | null;
+  map_provider: string | null;
+  routing_provider: string | null;
+  search_provider: string | null;
 };
 
 export type PlannerSearch = {

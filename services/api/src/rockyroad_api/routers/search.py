@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from rockyroad_api.models import RecentSearchOut, SearchResponse, Viewport
-from rockyroad_api.search import list_recent_searches, record_recent_search, search_places
+from rockyroad_api.search import SearchError, list_recent_searches, record_recent_search
 
 router = APIRouter(tags=["search"])
 
@@ -20,7 +20,10 @@ def search(
     viewport = None
     if None not in {west, south, east, north}:
         viewport = Viewport(west=west or 0, south=south or 0, east=east or 0, north=north or 0)
-    result = search_places(request.app.state.db, q, viewport)
+    try:
+        result = request.app.state.search.search(q, viewport)
+    except SearchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     record_recent_search(request.app.state.db, q, result.results[0].id if result.results else None)
     return result
 

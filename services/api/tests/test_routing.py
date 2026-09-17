@@ -9,9 +9,11 @@ from rockyroad_api.routing import (
     cache_key,
     parse_optimized_order,
     parse_valhalla,
+    routing_data_version,
     routing_failure_message,
     valhalla_payload,
 )
+from rockyroad_api.settings import Settings
 
 
 def _stop(name: str, lon: float, lat: float, position: int) -> StopOut:
@@ -27,6 +29,21 @@ def _stop(name: str, lon: float, lat: float, position: int) -> StopOut:
         place_id=None,
         created_at=now,
     )
+
+
+def test_hosted_routing_version_is_independent_of_valhalla_manifest(tmp_path) -> None:
+    settings = Settings(
+        duckdb_path=tmp_path / "db",
+        geo_dir=tmp_path / "geo",
+        maps_dir=tmp_path / "maps",
+        osm_dir=tmp_path / "osm",
+        routing_dir=tmp_path / "routing",
+        provider_mode="hosted",
+        hosted_routing_version="ors-v1",
+    )
+    (settings.routing_dir).mkdir(parents=True, exist_ok=True)
+    (settings.routing_dir / "manifest.json").write_text('{"version":"valhalla-old"}', encoding="utf-8")
+    assert routing_data_version(settings) == "ors-v1"
 
 
 def test_cache_key_changes_with_avoid_flags() -> None:
