@@ -20,7 +20,6 @@ class Settings(BaseSettings):
     maps_dir: Path = Path("data/maps")
     osm_dir: Path = Path("data/osm")
     routing_dir: Path = Path("data/routing/valhalla")
-    region_profile: str = "sample"
     api_host: str = "127.0.0.1"
     api_port: int = 8000
     valhalla_url: str = Field(

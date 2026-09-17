@@ -80,16 +80,6 @@ export type TripSummary = {
   stop_count: number;
 };
 
-export type SavedPlace = {
-  id: string;
-  name: string;
-  lon: number;
-  lat: number;
-  place_id: string | null;
-  notes: string | null;
-  created_at: string;
-};
-
 export type HealthResponse = {
   status: "ok" | "degraded";
   duckdb: boolean;

@@ -1,8 +1,6 @@
 import type {
   HealthResponse,
-  PlaceResult,
   RouteResponse,
-  SavedPlace,
   SearchResponse,
   Stop,
   Trip,
@@ -90,15 +88,4 @@ export const api = {
     request<Trip>(`/api/trips/${id}/stops`, { method: "PUT", body: JSON.stringify(stops) }),
   routeTrip: (id: string) => request<RouteResponse>(`/api/trips/${id}/route`, { method: "POST" }),
   optimizeTrip: (id: string) => request<RouteResponse>(`/api/trips/${id}/optimize`, { method: "POST" }),
-  listSavedPlaces: () => request<SavedPlace[]>("/api/saved-places"),
-  savePlace: (place: Pick<PlaceResult, "name" | "lon" | "lat" | "id">) =>
-    request<SavedPlace>("/api/saved-places", {
-      method: "POST",
-      body: JSON.stringify({
-        name: place.name,
-        lon: place.lon,
-        lat: place.lat,
-        place_id: place.id,
-      }),
-    }),
 };
