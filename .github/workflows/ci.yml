@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  PLAYWRIGHT_BROWSERS_PATH: ${{ runner.tool_cache }}/rockyroad-playwright
+
 jobs:
   verify:
     runs-on: [self-hosted, macOS, ARM64, rockyroad]

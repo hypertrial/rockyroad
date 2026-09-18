@@ -26,6 +26,8 @@ The repository runner is named `rockyroad-mac-arm64` and has the labels
 `~/.local/share/actions-runner/rockyroad` and starts as a LaunchAgent. Its logs
 are under
 `~/Library/Logs/actions.runner.hypertrial-rockyroad.rockyroad-mac-arm64`.
+Playwright browsers use a RockyRoad-specific directory in the runner tool cache
+so installs do not contend with browser caches used by other local projects.
 
 From the runner directory, inspect or control the service with:
 
