@@ -51,10 +51,6 @@ def test_ci_targets_the_free_repository_runner() -> None:
     triggers = workflow.get("on", workflow.get(True))
     assert triggers == {"push": {"branches": ["main"]}, "workflow_dispatch": None}
     assert workflow["permissions"] == {"contents": "read"}
-    assert all(
-        job["env"]["PLAYWRIGHT_BROWSERS_PATH"] == "${{ runner.tool_cache }}/rockyroad-playwright"
-        for job in jobs.values()
-    )
 
     steps = [step for job in jobs.values() for step in job["steps"]]
     commands = [step["run"] for step in steps if "run" in step]
@@ -62,6 +58,15 @@ def test_ci_targets_the_free_repository_runner() -> None:
     assert "./scripts/verify" in commands
     assert "pnpm --filter @rockyroad/web exec playwright install chromium" in commands
     assert all("--with-deps" not in command for command in commands)
+    browser_commands = {
+        "./scripts/verify",
+        "pnpm --filter @rockyroad/web exec playwright install chromium",
+    }
+    browser_steps = [step for step in steps if step.get("run") in browser_commands]
+    assert all(
+        step["env"]["PLAYWRIGHT_BROWSERS_PATH"] == "${{ runner.tool_cache }}/rockyroad-playwright"
+        for step in browser_steps
+    )
     revisions = [action.rsplit("@", 1)[1] for action in actions]
     assert all(len(revision) == 40 and set(revision) <= set("0123456789abcdef") for revision in revisions)
     checkout = next(step for step in steps if step.get("uses", "").startswith("actions/checkout@"))

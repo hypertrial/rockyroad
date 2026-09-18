@@ -12,8 +12,6 @@ jobs:
   verify:
     runs-on: [self-hosted, macOS, ARM64, rockyroad]
     timeout-minutes: 30
-    env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.tool_cache }}/rockyroad-playwright
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -31,4 +29,8 @@ jobs:
       - run: uv sync --extra dev
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @rockyroad/web exec playwright install chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.tool_cache }}/rockyroad-playwright
       - run: ./scripts/verify
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.tool_cache }}/rockyroad-playwright
