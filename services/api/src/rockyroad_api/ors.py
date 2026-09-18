@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -133,6 +134,15 @@ def parse_vroom_order(payload: dict[str, Any], stop_count: int) -> list[int]:
 def ors_failure_message(status_code: int, body: str, *, secret: str) -> tuple[str, int]:
     safe = redact_secret(body, secret).strip()
     lowered = safe.casefold()
+    error_code: int | None = None
+    try:
+        payload = json.loads(safe)
+    except (TypeError, ValueError):
+        payload = None
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict) and isinstance(error.get("code"), int):
+            error_code = error["code"]
     if status_code in {401, 403} and any(token in lowered for token in ("quota", "limit", "exceed", "rate")):
         return "OpenRouteService daily quota is exhausted. Try again later.", 429
     if status_code == 401:
@@ -141,9 +151,18 @@ def ors_failure_message(status_code: int, body: str, *, secret: str) -> tuple[st
         return "OpenRouteService denied the request. Check the API key or daily quota.", 503
     if status_code == 429:
         return "OpenRouteService rate limit reached. Wait a minute and try again.", 429
-    if status_code in {404, 422} or "could not find routable" in lowered or "not found" in lowered:
+    if error_code in {2009, 2016} or any(
+        token in lowered for token in ("could not find routable", "route could not be found", "unable to find a route")
+    ):
+        message = "OpenRouteService could not connect those stops by road. Move a stop to a nearby road and try again."
+        return message, 422
+    if error_code in {2010, 2013, 2014, 2015} or "point was not found" in lowered:
         return "No roads near those stops in OpenRouteService coverage.", 422
-    return "OpenRouteService could not produce a route.", 422 if status_code < 500 else 503
+    if error_code in {2004, 2017} or status_code == 413:
+        return "That route exceeds an OpenRouteService request limit.", 422
+    if 400 <= status_code < 500:
+        return "OpenRouteService rejected RockyRoad's route request.", 502
+    return "OpenRouteService could not produce a route.", 503
 
 
 class OpenRouteServiceClient:
@@ -166,17 +185,17 @@ class OpenRouteServiceClient:
         alternatives = parse_ors_geojson(self._directions(ordered, settings))
         return RouteComputation(alternatives=alternatives, optimized_order=optimized_order)
 
-    def _headers(self) -> dict[str, str]:
+    def _headers(self, *, accept: str = "application/json") -> dict[str, str]:
         return {
             "Authorization": self.settings.ors_key_value(),
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "Accept": accept,
         }
 
-    def _post(self, url: str, body: dict[str, Any]) -> dict[str, Any]:
+    def _post(self, url: str, body: dict[str, Any], *, accept: str = "application/json") -> dict[str, Any]:
         secret = self.settings.ors_key_value()
         try:
-            response = self.client.post(url, json=body, headers=self._headers())
+            response = self.client.post(url, json=body, headers=self._headers(accept=accept))
         except httpx.TimeoutException as exc:
             raise RoutingError("OpenRouteService timed out.", status_code=503) from exc
         except httpx.HTTPError as exc:
@@ -194,7 +213,7 @@ class OpenRouteServiceClient:
 
     def _directions(self, stops: list[StopOut], settings: TripSettingsOut) -> dict[str, Any]:
         url = f"{self.settings.ors_base_url.rstrip('/')}/v2/directions/{ORS_PROFILE}/geojson"
-        return self._post(url, ors_directions_payload(stops, settings))
+        return self._post(url, ors_directions_payload(stops, settings), accept="application/geo+json")
 
     def _optimize(self, stops: list[StopOut]) -> dict[str, Any]:
         return self._post(self.settings.ors_optimization_url, ors_optimization_payload(stops))

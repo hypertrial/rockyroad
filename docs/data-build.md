@@ -137,6 +137,8 @@ Keep OSM attribution visible. Produced tiles, graphs, and Parquet inherit ODbL s
 | --- | --- | --- |
 | Hosted health is degraded | Missing `ROCKYROAD_ORS_API_KEY` | Add a key to `.env` and restart |
 | Hosted route 429 | OpenRouteService quota or rate limit | Wait for the rolling window; reuse cached routes |
+| Hosted route 422 / stops cannot connect | One or more stops are not near a routable road | Move each stop onto a nearby road and retry |
+| Hosted route 502/503 | OpenRouteService rejected the request or is unavailable | Retry, then check the provider configuration and service status |
 | Hosted search 429/503 | Photon throttle or outage | Wait and retry; results are cached after the first success |
 | `update-osm` rejects an extract | Path is not allow-listed | Add it under `config/regions.yaml` |
 | Blank local map | Missing PMTiles | `build-map`, then confirm `/maps/north-america.pmtiles` |

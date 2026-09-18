@@ -190,6 +190,95 @@ def test_ors_failure_and_redaction() -> None:
     assert ors_failure_message(401, "invalid", secret=secret)[1] == 503
 
 
+@pytest.mark.parametrize(
+    ("status_code", "body", "expected_message", "expected_status"),
+    [
+        (401, "Invalid API key", "rejected the API key", 503),
+        (403, "Forbidden", "denied the request", 503),
+        (403, "Daily quota exceeded", "daily quota is exhausted", 429),
+        (429, "Too Many Requests", "rate limit reached", 429),
+        (
+            400,
+            '{"error":{"code":2009,"message":"Routing failed"}}',
+            "could not connect those stops",
+            422,
+        ),
+        (400, '{"error":{"code":2016,"message":"Routing failed"}}', "could not connect those stops", 422),
+        (400, '{"error":{"code":2010,"message":"Invalid point"}}', "No roads near", 422),
+        (400, '{"error":{"code":2013,"message":"Invalid point"}}', "No roads near", 422),
+        (400, '{"error":{"code":2014,"message":"Invalid point"}}', "No roads near", 422),
+        (400, '{"error":{"code":2015,"message":"Invalid point"}}', "No roads near", 422),
+        (400, '{"error":{"code":2004,"message":"Request exceeds limit"}}', "request limit", 422),
+        (400, '{"error":{"code":2017,"message":"Request exceeds limit"}}', "request limit", 422),
+        (413, "Request Entity Too Large", "request limit", 422),
+        (422, "Unprocessable Content", "rejected RockyRoad's route request", 502),
+        (418, "I'm a teapot", "rejected RockyRoad's route request", 502),
+        (400, "Route could not be found", "could not connect those stops", 422),
+        (400, "Point was not found", "No roads near", 422),
+        (
+            400,
+            '{"error":{"code":2007,"message":"This response format is not supported"}}',
+            "rejected RockyRoad's route request",
+            502,
+        ),
+        (406, "Not Acceptable", "rejected RockyRoad's route request", 502),
+        (500, "Internal Server Error", "could not produce a route", 503),
+    ],
+)
+def test_ors_failure_maps_documented_provider_errors(
+    status_code: int,
+    body: str,
+    expected_message: str,
+    expected_status: int,
+) -> None:
+    message, mapped_status = ors_failure_message(status_code, body, secret="hidden-key")
+    assert expected_message in message
+    assert mapped_status == expected_status
+    assert "hidden-key" not in message
+
+
+def test_ors_client_two_stop_geojson_contract(tmp_path: Path) -> None:
+    stops = [
+        _stop("Richmond-Brighouse", -123.1362733, 49.1681069, 0),
+        _stop("Calgary", -114.057541, 51.0456064, 1),
+    ]
+    fake = FakeClient([FakeResponse(200, _geojson_route())])
+    client = OpenRouteServiceClient(_hosted_settings(tmp_path), client=fake)  # type: ignore[arg-type]
+
+    result = client.request_route(stops, _settings(stops))
+
+    assert result.alternatives[0].distance_m == 3600000
+    assert len(fake.calls) == 1
+    assert fake.calls[0]["url"] == "https://ors.test/v2/directions/driving-car/geojson"
+    assert fake.calls[0]["json"] == {
+        "coordinates": [[-123.1362733, 49.1681069], [-114.057541, 51.0456064]],
+        "instructions": True,
+        "geometry": True,
+        "units": "m",
+    }
+    assert fake.calls[0]["headers"] == {
+        "Authorization": "test-key",
+        "Content-Type": "application/json",
+        "Accept": "application/geo+json",
+    }
+
+
+def test_ors_client_maps_unroutable_response_without_leaking_secret(tmp_path: Path) -> None:
+    secret = "hidden-key"
+    stops = [_stop("A", -123.1362733, 49.1681069, 0), _stop("B", -114.057541, 51.0456064, 1)]
+    response = FakeResponse(
+        400,
+        text=f'{{"error":{{"code":2009,"message":"Routing failed for {secret}"}}}}',
+    )
+    client = OpenRouteServiceClient(_hosted_settings(tmp_path, key=secret), client=FakeClient([response]))  # type: ignore[arg-type]
+
+    with pytest.raises(RoutingError, match="could not connect those stops") as failure:
+        client.request_route(stops, _settings(stops))
+
+    assert failure.value.status_code == 422
+    assert secret not in str(failure.value)
+
+
 def test_ors_client_optimize_then_directions(tmp_path: Path) -> None:
     stops = [_stop("A", -63.1, 46.2, 0), _stop("B", -79.38, 43.65, 1), _stop("C", -114.07, 51.05, 2)]
     fake = FakeClient(
@@ -210,6 +299,10 @@ def test_ors_client_optimize_then_directions(tmp_path: Path) -> None:
     headers = fake.calls[0]["headers"]
     assert isinstance(headers, dict)
     assert headers["Authorization"] == "test-key"
+    assert headers["Accept"] == "application/json"
+    direction_headers = fake.calls[1]["headers"]
+    assert isinstance(direction_headers, dict)
+    assert direction_headers["Accept"] == "application/geo+json"
 
 
 def test_ors_client_rejects_too_many_stops_and_missing_key(tmp_path: Path) -> None:
@@ -248,3 +341,17 @@ def test_ors_client_maps_timeout_and_quota(tmp_path: Path) -> None:
         quota.request_route(stops, _settings(stops))
     assert exhausted.value.status_code == 429
     assert "hidden-key" not in str(exhausted.value)
+
+
+def test_ors_client_maps_network_failure_to_service_unavailable(tmp_path: Path) -> None:
+    class NetworkFailureClient:
+        def post(self, *args: object, **kwargs: object) -> FakeResponse:
+            raise httpx.ConnectError("connection refused")
+
+    stops = [_stop("A", -123.1362733, 49.1681069, 0), _stop("B", -114.057541, 51.0456064, 1)]
+    client = OpenRouteServiceClient(_hosted_settings(tmp_path), client=NetworkFailureClient())  # type: ignore[arg-type]
+
+    with pytest.raises(RoutingError, match="unavailable") as failure:
+        client.request_route(stops, _settings(stops))
+
+    assert failure.value.status_code == 503
