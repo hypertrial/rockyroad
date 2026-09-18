@@ -147,6 +147,7 @@ def _publish_directories(replacements: list[tuple[Path, Path]]) -> None:
     published: list[tuple[Path, Path, bool]] = []
     try:
         for staged, target in replacements:
+            target.parent.mkdir(parents=True, exist_ok=True)
             backup = target.parent / f".{target.name}.backup-{uuid.uuid4().hex}"
             had_previous = target.exists()
             if had_previous:
@@ -248,13 +249,12 @@ def build_routing(pbf: Path | None = None, output_dir: Path | None = None) -> di
                 "Valhalla tools are not installed. Install valhalla_build_tiles or Docker, "
                 "then rerun rockyroad-data build-routing."
             ) from exc
-        docker_files = docker_files_dir(dest)
-    else:
-        docker_files = dest
+    docker_files = docker_files_dir(dest)
     if docker_files != dest and (docker_files.is_relative_to(dest) or dest.is_relative_to(docker_files)):
         raise ToolError("ROCKYROAD_VALHALLA_FILES must not be nested inside the routing output directory")
     _require_managed_target(dest)
     if docker_files != dest:
+        docker_files.parent.mkdir(parents=True, exist_ok=True)
         _require_managed_target(docker_files)
 
     build_stage = _staging_dir(dest if host_tools is not None else docker_files)

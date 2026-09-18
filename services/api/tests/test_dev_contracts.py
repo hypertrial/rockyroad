@@ -31,7 +31,17 @@ def test_offline_smoke_uses_the_local_compose_profile() -> None:
     script = (REPO_ROOT / "scripts" / "offline-smoke.sh").read_text(encoding="utf-8")
     assert "docker-compose --profile local config" in script
     assert "docker compose --profile local config" in script
-    assert "docker compose --profile local up --build" in script
+    assert "ROCKYROAD_PROVIDER_MODE=local docker compose --profile local up --build" in script
+
+
+def test_offline_docs_set_local_mode_on_assembled_compose() -> None:
+    docs = (REPO_ROOT / "docs" / "data-build.md").read_text(encoding="utf-8")
+    script = (REPO_ROOT / "scripts" / "offline-smoke.sh").read_text(encoding="utf-8")
+    assembled = "ROCKYROAD_PROVIDER_MODE=local docker compose --profile local up --build"
+    assert assembled in docs
+    assert assembled in script
+    compose = (REPO_ROOT / "compose.yaml").read_text(encoding="utf-8")
+    assert "ROCKYROAD_PROVIDER_MODE: ${ROCKYROAD_PROVIDER_MODE:-hosted}" in compose
 
 
 def test_make_fmt_only_invokes_installed_formatter() -> None:

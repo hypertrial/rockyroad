@@ -95,7 +95,9 @@ def test_build_routing_uses_docker_when_host_tools_missing(tmp_path: Path, monke
 def test_build_routing_prefers_host_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source = tmp_path / "north-america.osm.pbf"
     source.write_bytes(b"pbf")
-    dest = tmp_path / "valhalla"
+    home = tmp_path / "home"
+    home.mkdir()
+    dest = home / "valhalla"
     commands: list[list[str]] = []
 
     def fake_which(name: str) -> str | None:
@@ -108,26 +110,103 @@ def test_build_routing_prefers_host_tools(tmp_path: Path, monkeypatch: pytest.Mo
         config = Path(args[args.index("-c") + 1])
         (config.parent / "valhalla_tiles.tar").write_bytes(b"tiles")
 
+    monkeypatch.delenv("ROCKYROAD_VALHALLA_FILES", raising=False)
+    monkeypatch.setattr("rockyroad_data.process.Path.home", lambda: home)
     monkeypatch.setattr("rockyroad_data.routing.shutil.which", fake_which)
     monkeypatch.setattr("rockyroad_data.routing.run_command", fake_run)
     monkeypatch.setattr("rockyroad_data.routing.ensure_data_dirs", lambda: None)
 
-    build_routing(pbf=source, output_dir=dest)
+    manifest = build_routing(pbf=source, output_dir=dest)
     assert commands[0][0] == "/usr/bin/valhalla_build_tiles"
     assert commands[1][0] == "/usr/bin/valhalla_build_extract"
     assert all(args[0] != "docker" for args in commands)
     assert str(dest / "valhalla_tiles") in (dest / "valhalla.json").read_text(encoding="utf-8")
+    assert Path(manifest["docker_files"]) == dest.resolve()
+
+
+def test_build_routing_host_tools_stage_spaced_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "north-america.osm.pbf"
+    source.write_bytes(b"pbf")
+    dest = tmp_path / "Mac SSD" / "valhalla"
+    dest.mkdir(parents=True)
+    home = tmp_path / "home"
+    home.mkdir()
+    commands: list[list[str]] = []
+
+    def fake_which(name: str) -> str | None:
+        if name in {"valhalla_build_tiles", "valhalla_build_extract"}:
+            return f"/usr/bin/{name}"
+        return None
+
+    def fake_run(args: list[str], **_kwargs: object) -> None:
+        commands.append(list(args))
+        config = Path(args[args.index("-c") + 1])
+        (config.parent / "valhalla_tiles.tar").write_bytes(b"tiles")
+
+    monkeypatch.delenv("ROCKYROAD_VALHALLA_FILES", raising=False)
+    monkeypatch.setattr("rockyroad_data.routing.Path.home", lambda: home)
+    monkeypatch.setattr("rockyroad_data.routing.shutil.which", fake_which)
+    monkeypatch.setattr("rockyroad_data.routing.run_command", fake_run)
+    monkeypatch.setattr("rockyroad_data.routing.ensure_data_dirs", lambda: None)
+
+    manifest = build_routing(pbf=source, output_dir=dest)
+    cache = (home / ".cache" / "rockyroad" / "valhalla").resolve()
+    assert all(args[0] != "docker" for args in commands)
+    assert Path(manifest["docker_files"]) == cache
+    assert (cache / "valhalla_tiles.tar").is_file()
+    assert (dest / "valhalla_tiles.tar").is_file()
+
+
+def test_build_routing_host_tools_honor_valhalla_files_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "north-america.osm.pbf"
+    source.write_bytes(b"pbf")
+    home = tmp_path / "home"
+    home.mkdir()
+    dest = home / "valhalla"
+    override = tmp_path / "bindable-override"
+    commands: list[list[str]] = []
+
+    def fake_which(name: str) -> str | None:
+        if name in {"valhalla_build_tiles", "valhalla_build_extract"}:
+            return f"/usr/bin/{name}"
+        return None
+
+    def fake_run(args: list[str], **_kwargs: object) -> None:
+        commands.append(list(args))
+        config = Path(args[args.index("-c") + 1])
+        (config.parent / "valhalla_tiles.tar").write_bytes(b"tiles")
+
+    monkeypatch.setenv("ROCKYROAD_VALHALLA_FILES", str(override))
+    monkeypatch.setattr("rockyroad_data.process.Path.home", lambda: home)
+    monkeypatch.setattr("rockyroad_data.routing.shutil.which", fake_which)
+    monkeypatch.setattr("rockyroad_data.routing.run_command", fake_run)
+    monkeypatch.setattr("rockyroad_data.routing.ensure_data_dirs", lambda: None)
+
+    manifest = build_routing(pbf=source, output_dir=dest)
+    cache = (home / ".cache" / "rockyroad" / "valhalla").resolve()
+    assert all(args[0] != "docker" for args in commands)
+    assert Path(manifest["docker_files"]) == override.resolve()
+    assert Path(manifest["docker_files"]) != dest.resolve()
+    assert Path(manifest["docker_files"]) != cache
+    assert (override / "valhalla_tiles.tar").is_file()
+    assert (dest / "valhalla_tiles.tar").is_file()
+    assert not cache.exists()
 
 
 def test_failed_host_rebuild_preserves_live_graph(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source = tmp_path / "north-america.osm.pbf"
     source.write_bytes(b"pbf")
-    dest = tmp_path / "valhalla"
-    dest.mkdir()
+    home = tmp_path / "home"
+    dest = home / "valhalla"
+    dest.mkdir(parents=True)
     (dest / "valhalla.json").write_text("old config", encoding="utf-8")
     (dest / "valhalla_tiles.tar").write_bytes(b"old tiles")
     (dest / "manifest.json").write_text("old manifest", encoding="utf-8")
 
+    monkeypatch.delenv("ROCKYROAD_VALHALLA_FILES", raising=False)
+    monkeypatch.setattr("rockyroad_data.process.Path.home", lambda: home)
     monkeypatch.setattr(
         "rockyroad_data.routing._host_valhalla_tools",
         lambda: ("valhalla_build_tiles", "valhalla_build_extract"),
@@ -154,10 +233,13 @@ def test_build_refuses_to_replace_a_directory_with_unmanaged_files(
 ) -> None:
     source = tmp_path / "north-america.osm.pbf"
     source.write_bytes(b"pbf")
-    dest = tmp_path / "shared"
-    dest.mkdir()
+    home = tmp_path / "home"
+    dest = home / "shared"
+    dest.mkdir(parents=True)
     sentinel = dest / "keep-me.txt"
     sentinel.write_text("unrelated", encoding="utf-8")
+    monkeypatch.delenv("ROCKYROAD_VALHALLA_FILES", raising=False)
+    monkeypatch.setattr("rockyroad_data.process.Path.home", lambda: home)
     monkeypatch.setattr(
         "rockyroad_data.routing._host_valhalla_tools",
         lambda: ("valhalla_build_tiles", "valhalla_build_extract"),
@@ -173,11 +255,14 @@ def test_build_refuses_to_replace_a_directory_with_unmanaged_files(
 def test_build_preserves_unmanaged_file_created_during_build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source = tmp_path / "north-america.osm.pbf"
     source.write_bytes(b"pbf")
-    dest = tmp_path / "valhalla"
-    dest.mkdir()
+    home = tmp_path / "home"
+    dest = home / "valhalla"
+    dest.mkdir(parents=True)
     (dest / "valhalla.json").write_text('{"mjolnir": {}}', encoding="utf-8")
     (dest / "valhalla_tiles.tar").write_bytes(b"old tiles")
     (dest / "manifest.json").write_text("old manifest", encoding="utf-8")
+    monkeypatch.delenv("ROCKYROAD_VALHALLA_FILES", raising=False)
+    monkeypatch.setattr("rockyroad_data.process.Path.home", lambda: home)
     monkeypatch.setattr(
         "rockyroad_data.routing._host_valhalla_tools",
         lambda: ("valhalla_build_tiles", "valhalla_build_extract"),

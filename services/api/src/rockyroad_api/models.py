@@ -25,7 +25,11 @@ class Viewport(BaseModel):
 
     @property
     def center(self) -> tuple[float, float]:
-        return ((self.west + self.east) / 2.0, (self.south + self.north) / 2.0)
+        if self.west <= self.east:
+            lon = (self.west + self.east) / 2.0
+        else:
+            lon = ((self.west + self.east + 360.0) / 2.0 + 180.0) % 360.0 - 180.0
+        return (lon, (self.south + self.north) / 2.0)
 
     def contains(self, lon: float, lat: float) -> bool:
         if not self.south <= lat <= self.north:

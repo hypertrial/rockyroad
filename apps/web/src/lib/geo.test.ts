@@ -29,4 +29,26 @@ describe("viewportCenter", () => {
   it("averages the four bounds", () => {
     expect(viewportCenter({ west: -124, south: 48, east: -122, north: 50 })).toEqual({ lon: -123, lat: 49 });
   });
+
+  it("keeps the center inside an antimeridian wrap", () => {
+    const center = viewportCenter({ west: 170, south: 50, east: -170, north: 55 });
+    expect(center).not.toBeNull();
+    expect(center?.lat).toBe(52.5);
+    expect(Math.abs(center?.lon ?? 0)).toBeGreaterThanOrEqual(170);
+    expect(center?.lon).not.toBe(0);
+  });
+
+  it("places an asymmetric wrap center in the negative hemisphere", () => {
+    expect(viewportCenter({ west: 170, south: 50, east: -160, north: 55 })).toEqual({
+      lon: -175,
+      lat: 52.5,
+    });
+  });
+
+  it("places an asymmetric wrap center in the positive hemisphere", () => {
+    expect(viewportCenter({ west: 160, south: 50, east: -170, north: 55 })).toEqual({
+      lon: 175,
+      lat: 52.5,
+    });
+  });
 });

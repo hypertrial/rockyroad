@@ -115,7 +115,7 @@ Local mode still serves `data/maps` with byte ranges and frames a sample PEI map
 After local artifacts exist:
 
 1. `ROCKYROAD_PROVIDER_MODE=local ./scripts/dev` and open `http://127.0.0.1:5173`
-2. Assembled: `pnpm build && docker compose --profile local up --build`
+2. Assembled: `pnpm build && ROCKYROAD_PROVIDER_MODE=local docker compose --profile local up --build`
 3. Confirm `GET /api/health` reports local DuckDB, geo, maps, and routing.
 4. Create a trip, search a local place, add two PEI stops, build a route, restart the API, and confirm the trip is still present.
 

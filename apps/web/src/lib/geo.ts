@@ -12,8 +12,12 @@ export function haversineMeters(lon1: number, lat1: number, lon2: number, lat2: 
 
 export function viewportCenter(viewport: ViewportBounds | null | undefined): { lon: number; lat: number } | null {
   if (!viewport) return null;
+  const lon =
+    viewport.west <= viewport.east
+      ? (viewport.west + viewport.east) / 2
+      : ((viewport.west + viewport.east + 360) / 2 + 180) % 360 - 180;
   return {
-    lon: (viewport.west + viewport.east) / 2,
+    lon,
     lat: (viewport.south + viewport.north) / 2,
   };
 }

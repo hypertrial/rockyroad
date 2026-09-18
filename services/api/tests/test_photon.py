@@ -441,6 +441,13 @@ def test_viewport_contains_handles_antimeridian_and_rank_in_view() -> None:
     wrap = Viewport(west=170, south=50, east=-170, north=55)
     assert wrap.contains(175, 52) is True
     assert wrap.contains(0, 52) is False
+    assert wrap.contains(*wrap.center) is True
+    assert abs(wrap.center[0]) >= 170
+    gulf = Viewport(west=-1, south=50, east=1, north=55)
+    assert photon_cache_key("adak", wrap) != photon_cache_key("adak", gulf)
+    params = dict(photon_query_params("adak", wrap, 8))
+    assert abs(float(params["lon"])) >= 170
+    assert params["lat"] == "52.50000"
     outside_first = _place("Vancouver", -122.675, 45.6307, state="Washington", score=1.0)
     inside = _place("Vancouver", -123.1139, 49.2609, state="British Columbia", score=0.98)
     response = rank_in_view(
@@ -452,6 +459,25 @@ def test_viewport_contains_handles_antimeridian_and_rank_in_view() -> None:
     assert [place.score for place in response.results] == [1.0, 0.98]
     unchanged = rank_in_view(SearchResponse(query="vancouver", results=[outside_first, inside]), None)
     assert [place.state for place in unchanged.results] == ["Washington", "British Columbia"]
+
+
+def test_viewport_center_wraps_into_each_hemisphere() -> None:
+    western = Viewport(west=170, south=50, east=-160, north=55)
+    assert western.center == (-175.0, 52.5)
+    assert western.contains(*western.center) is True
+    assert western.contains(5.0, 52.5) is False
+
+    eastern = Viewport(west=160, south=50, east=-170, north=55)
+    assert eastern.center == (175.0, 52.5)
+    assert eastern.contains(*eastern.center) is True
+    assert eastern.contains(-5.0, 52.5) is False
+
+    dateline = Viewport(west=170, south=50, east=-170, north=55)
+    assert photon_cache_key("adak", western) != photon_cache_key("adak", dateline)
+    assert photon_cache_key("adak", eastern) != photon_cache_key("adak", dateline)
+    params = dict(photon_query_params("adak", western, 8))
+    assert params["lon"] == "-175.00000"
+    assert params["lat"] == "52.50000"
 
 
 def test_viewport_contains_includes_edges_and_ranks_boundary_points_as_inside() -> None:
