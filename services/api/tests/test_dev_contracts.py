@@ -42,6 +42,28 @@ def test_make_fmt_only_invokes_installed_formatter() -> None:
     assert "|| true" not in fmt_recipe
 
 
+def test_ci_targets_the_free_repository_runner() -> None:
+    workflow = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    jobs = workflow["jobs"]
+    expected_runner = ["self-hosted", "macOS", "ARM64", "rockyroad"]
+    assert all(job["runs-on"] == expected_runner for job in jobs.values())
+
+    triggers = workflow.get("on", workflow.get(True))
+    assert triggers == {"push": {"branches": ["main"]}, "workflow_dispatch": None}
+    assert workflow["permissions"] == {"contents": "read"}
+
+    steps = [step for job in jobs.values() for step in job["steps"]]
+    commands = [step["run"] for step in steps if "run" in step]
+    actions = [step["uses"] for step in steps if "uses" in step]
+    assert "./scripts/verify" in commands
+    assert "pnpm --filter @rockyroad/web exec playwright install chromium" in commands
+    assert all("--with-deps" not in command for command in commands)
+    revisions = [action.rsplit("@", 1)[1] for action in actions]
+    assert all(len(revision) == 40 and set(revision) <= set("0123456789abcdef") for revision in revisions)
+    checkout = next(step for step in steps if step.get("uses", "").startswith("actions/checkout@"))
+    assert checkout["with"]["persist-credentials"] is False
+
+
 def test_vite_proxies_to_the_server_only_dev_api_origin() -> None:
     config = (REPO_ROOT / "apps" / "web" / "vite.config.ts").read_text(encoding="utf-8")
     assert "ROCKYROAD_DEV_API_ORIGIN" in config
@@ -129,7 +151,11 @@ def test_compose_keeps_valhalla_on_local_profile() -> None:
     assert 'profiles: ["local"]' in text
     assert "ROCKYROAD_ORS_API_KEY" in text
     ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    assert "docker compose --profile local config" in ci
+    assert "./scripts/verify" in ci
+    verify = (REPO_ROOT / "scripts" / "verify").read_text(encoding="utf-8")
+    assert "make compose-config" in verify
+    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    assert "--profile local config" in makefile
 
 
 def test_dev_script_checks_hosted_ors_key() -> None:

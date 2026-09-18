@@ -95,6 +95,10 @@ tile, search, or routing providers.
 
 `make compose-config` still accepts either `docker-compose` or `docker compose` if the Compose plugin is missing locally.
 
+GitHub Actions uses a repository-scoped macOS runner to stay within the free
+plan. See [docs/ci.md](docs/ci.md) for its trust boundary, operation, and
+rollback procedure.
+
 ## License
 
 Application code is MIT. OpenStreetMap data is © OpenStreetMap contributors and licensed under ODbL.
