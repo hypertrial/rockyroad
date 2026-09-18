@@ -51,7 +51,10 @@ def test_ci_targets_the_free_repository_runner() -> None:
     triggers = workflow.get("on", workflow.get(True))
     assert triggers == {"push": {"branches": ["main"]}, "workflow_dispatch": None}
     assert workflow["permissions"] == {"contents": "read"}
-    assert workflow["env"]["PLAYWRIGHT_BROWSERS_PATH"] == "${{ runner.tool_cache }}/rockyroad-playwright"
+    assert all(
+        job["env"]["PLAYWRIGHT_BROWSERS_PATH"] == "${{ runner.tool_cache }}/rockyroad-playwright"
+        for job in jobs.values()
+    )
 
     steps = [step for job in jobs.values() for step in job["steps"]]
     commands = [step["run"] for step in steps if "run" in step]

@@ -8,13 +8,12 @@ on:
 permissions:
   contents: read
 
-env:
-  PLAYWRIGHT_BROWSERS_PATH: ${{ runner.tool_cache }}/rockyroad-playwright
-
 jobs:
   verify:
     runs-on: [self-hosted, macOS, ARM64, rockyroad]
     timeout-minutes: 30
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.tool_cache }}/rockyroad-playwright
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
