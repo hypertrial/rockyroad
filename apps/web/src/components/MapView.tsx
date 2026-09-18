@@ -6,7 +6,7 @@ import { Protocol } from "pmtiles";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { coverageHint, hasExplicitCamera, initialMapCamera } from "../lib/mapCamera";
-import { commitMapPoint, coverageDropHint } from "../lib/mapInteraction";
+import { attachOutsideReleaseForwarder, commitMapPoint, coverageDropHint } from "../lib/mapInteraction";
 import { syncTripRouteLayer, type RouteMap } from "../lib/mapRouteLayer";
 import { mapLoadFailure, plannerMapStyle, usesLocalPmtiles } from "../lib/mapStyle";
 import type { PlaceResult, Trip, ViewportBounds } from "../lib/types";
@@ -192,10 +192,12 @@ export function MapView({
     });
     const observer = new ResizeObserver(() => map.resize());
     observer.observe(map.getContainer());
+    const detachRelease = attachOutsideReleaseForwarder(map.getCanvasContainer());
     mapRef.current = map;
     setMapReady(true);
     return () => {
       observer.disconnect();
+      detachRelease();
       previewMarkerRef.current?.remove();
       previewMarkerRef.current = null;
       map.remove();
@@ -233,6 +235,7 @@ export function MapView({
       element.type = "button";
       element.className = "trip-marker";
       element.dataset.selected = String(stop.id === selectedStopId);
+      element.dataset.dragging = "false";
       element.textContent = String(index + 1);
       const markerLabel = stop.region ? `${index + 1}. ${stop.name}, ${stop.region}` : `${index + 1}. ${stop.name}`;
       element.setAttribute("aria-label", `${markerLabel}. Select or drag to move.`);

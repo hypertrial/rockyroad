@@ -50,3 +50,31 @@ export function restoreRemovedStop(
   restored.splice(Math.min(Math.max(originalIndex, 0), restored.length), 0, removedStop);
   return restored;
 }
+
+export function attachOutsideReleaseForwarder(container: HTMLElement, doc: Document = document): () => void {
+  let pressInMap = false;
+  const onDown = () => {
+    pressInMap = true;
+  };
+  const onUp = (event: MouseEvent) => {
+    if (!pressInMap) return;
+    pressInMap = false;
+    if (event.target instanceof Node && container.contains(event.target)) return;
+    container.dispatchEvent(
+      new MouseEvent("mouseup", {
+        bubbles: true,
+        cancelable: true,
+        button: event.button,
+        buttons: 0,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      }),
+    );
+  };
+  container.addEventListener("mousedown", onDown);
+  doc.addEventListener("mouseup", onUp);
+  return () => {
+    container.removeEventListener("mousedown", onDown);
+    doc.removeEventListener("mouseup", onUp);
+  };
+}

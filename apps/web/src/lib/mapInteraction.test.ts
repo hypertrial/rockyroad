@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Stop } from "./types";
-import { commitMapPoint, coverageDropHint, restoreRemovedStop, toStopDrafts, withMovedStop } from "./mapInteraction";
+import {
+  attachOutsideReleaseForwarder,
+  commitMapPoint,
+  coverageDropHint,
+  restoreRemovedStop,
+  toStopDrafts,
+  withMovedStop,
+} from "./mapInteraction";
 
 const pei = [-64.45, 45.9, -61.9, 47.1];
 const [west, south, east, north] = pei;
@@ -165,5 +172,64 @@ describe("restoreRemovedStop", () => {
 
   it("does not duplicate a stop that was already restored", () => {
     expect(restoreRemovedStop(twoStops, twoStops[1], 0)).toBe(twoStops);
+  });
+});
+
+describe("attachOutsideReleaseForwarder", () => {
+  function setup() {
+    const container = document.createElement("div");
+    const outside = document.createElement("aside");
+    const inside = document.createElement("canvas");
+    document.body.append(container, outside);
+    container.append(inside);
+    const forwarded: MouseEvent[] = [];
+    container.addEventListener("mouseup", (event) => {
+      if (event.target === container) forwarded.push(event);
+    });
+    const detach = attachOutsideReleaseForwarder(container);
+    return { container, outside, inside, forwarded, detach };
+  }
+
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it("forwards an outside mouseup after a container mousedown", () => {
+    const { container, outside, forwarded, detach } = setup();
+    container.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, buttons: 1 }));
+    outside.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0, buttons: 0, clientX: 12, clientY: 34 }));
+
+    expect(forwarded).toHaveLength(1);
+    expect(forwarded[0].buttons).toBe(0);
+    expect(forwarded[0].button).toBe(0);
+    expect(forwarded[0].clientX).toBe(12);
+    expect(forwarded[0].clientY).toBe(34);
+    detach();
+  });
+
+  it("does not dispatch when the release is inside the container", () => {
+    const { inside, forwarded, detach } = setup();
+    inside.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, buttons: 1 }));
+    inside.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0, buttons: 0 }));
+
+    expect(forwarded).toHaveLength(0);
+    detach();
+  });
+
+  it("does not dispatch a mouseup without a prior container mousedown", () => {
+    const { outside, forwarded, detach } = setup();
+    outside.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0, buttons: 0 }));
+
+    expect(forwarded).toHaveLength(0);
+    detach();
+  });
+
+  it("stops forwarding after detach", () => {
+    const { container, outside, forwarded, detach } = setup();
+    detach();
+    container.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, buttons: 1 }));
+    outside.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0, buttons: 0 }));
+
+    expect(forwarded).toHaveLength(0);
   });
 });

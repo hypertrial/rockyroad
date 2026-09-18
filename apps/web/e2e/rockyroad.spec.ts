@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { mockRockyRoad } from "./fixtures";
 
 let browserErrors: string[] = [];
@@ -218,6 +218,84 @@ test("planner renders initial markers when health resolves after the first rende
 
   await expect(page.getByRole("region", { name: "Interactive trip map" })).toBeVisible();
   await expect(page.locator(".trip-marker")).toHaveCount(2);
+});
+
+async function dragMarkerTo(page: Page, marker: Locator, target: { x: number; y: number }) {
+  const box = await marker.boundingBox();
+  expect(box).toBeTruthy();
+  const startX = box!.x + box!.width / 2;
+  const startY = box!.y + box!.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  const steps = 12;
+  for (let i = 1; i <= steps; i += 1) {
+    await page.mouse.move(startX + ((target.x - startX) * i) / steps, startY + ((target.y - startY) * i) / steps, { steps: 2 });
+  }
+  await page.mouse.up();
+}
+
+test("desktop planner finishes a pin drag released over the side panel", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const state = await mockRockyRoad(page);
+  await page.goto("/trips/trip-1?panel=stops&lat=46.24&lng=-63.13&z=8");
+
+  await expect(page.getByRole("region", { name: "Interactive trip map" })).toBeVisible();
+  await expect(page.locator(".trip-marker")).toHaveCount(2);
+  await page.waitForTimeout(700);
+
+  const marker = page.getByRole("button", { name: /1\. Charlottetown/ });
+  const panel = page.locator(".planner-panel-body");
+  await expect(panel).toBeVisible();
+  const panelBox = await panel.boundingBox();
+  expect(panelBox).toBeTruthy();
+
+  await dragMarkerTo(page, marker, { x: panelBox!.x + panelBox!.width / 2, y: panelBox!.y + 48 });
+  await expect.poll(() => state.getStopReplacementRequestCount()).toBe(1);
+  expect(state.getTrip().stops[0]?.id).toBe("stop-a");
+  expect(state.getTrip().stops[0]?.place_id).toBeNull();
+  expect(state.getTrip().stops[0]?.lon).not.toBe(-63.13);
+  expect(state.getTrip().stops[0]?.lat).not.toBe(46.24);
+
+  const settled = page.getByRole("button", { name: /1\. Charlottetown/ });
+  await expect(settled).toHaveAttribute("data-dragging", "false");
+  await expect(settled).toHaveCSS("pointer-events", "auto");
+
+  const beforeHover = await settled.boundingBox();
+  const canvas = page.locator(".maplibregl-canvas");
+  const canvasBox = await canvas.boundingBox();
+  expect(beforeHover && canvasBox).toBeTruthy();
+  await page.mouse.move(canvasBox!.x + canvasBox!.width * 0.7, canvasBox!.y + canvasBox!.height * 0.35, { steps: 8 });
+  const afterHover = await settled.boundingBox();
+  expect(afterHover).toBeTruthy();
+  expect(Math.abs(afterHover!.x - beforeHover!.x)).toBeLessThan(2);
+  expect(Math.abs(afterHover!.y - beforeHover!.y)).toBeLessThan(2);
+
+  await page.mouse.click(canvasBox!.x + canvasBox!.width * 0.82, canvasBox!.y + canvasBox!.height * 0.28);
+  await expect.poll(() => state.getTrip().stops).toHaveLength(3);
+  await expect.poll(() => state.getStopReplacementRequestCount()).toBe(2);
+});
+
+test("desktop planner reverts a pin dropped outside map coverage", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const state = await mockRockyRoad(page);
+  await page.goto("/trips/trip-1?panel=stops&lat=46.3&lng=-63.45&z=6");
+
+  await expect(page.getByRole("region", { name: "Interactive trip map" })).toBeVisible();
+  await expect(page.locator(".trip-marker")).toHaveCount(2);
+  await page.waitForTimeout(700);
+
+  const marker = page.getByRole("button", { name: /1\. Charlottetown/ });
+  const recenter = page.getByRole("button", { name: "Recenter on trip" });
+  const recenterBox = await recenter.boundingBox();
+  expect(recenterBox).toBeTruthy();
+
+  await dragMarkerTo(page, marker, { x: recenterBox!.x + recenterBox!.width / 2, y: recenterBox!.y + recenterBox!.height / 2 });
+  await expect(page.locator(".map-banner")).toContainText("Drop the pin inside the map coverage.");
+  expect(state.getStopReplacementRequestCount()).toBe(0);
+  expect(state.getTrip().stops[0]?.lon).toBe(-63.13);
+  expect(state.getTrip().stops[0]?.lat).toBe(46.24);
+  expect(state.getTrip().stops[0]?.place_id).toBe("p-a");
+  await expect(page.getByRole("button", { name: /1\. Charlottetown/ })).toHaveAttribute("data-dragging", "false");
 });
 
 test("desktop planner saves titles, exposes route failures, and keeps keyboard focus visible", async ({ page }) => {
