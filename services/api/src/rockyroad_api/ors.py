@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 import httpx
@@ -12,6 +13,26 @@ from rockyroad_api.settings import Settings
 
 MAX_ORS_STOPS = 50
 ORS_PROFILE = "driving-car"
+
+
+def _finite_float(value: Any, message: str) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise RoutingError(message, status_code=502) from exc
+    if not math.isfinite(parsed):
+        raise RoutingError(message, status_code=502)
+    return parsed
+
+
+def _shape_index(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise RoutingError("OpenRouteService returned malformed directions", status_code=502) from exc
+    if parsed < 0:
+        raise RoutingError("OpenRouteService returned malformed directions", status_code=502)
+    return parsed
 
 
 def ors_avoid_features(settings: TripSettingsOut) -> list[str]:
@@ -70,10 +91,12 @@ def parse_ors_geojson(payload: dict[str, Any]) -> list[RouteAlternative]:
     for point in raw_coordinates:
         if not isinstance(point, list) or len(point) < 2:
             raise RoutingError("OpenRouteService returned a route without geometry", status_code=502)
-        try:
-            coordinates.append([float(point[0]), float(point[1])])
-        except (TypeError, ValueError) as exc:
-            raise RoutingError("OpenRouteService returned a route without geometry", status_code=502) from exc
+        coordinates.append(
+            [
+                _finite_float(point[0], "OpenRouteService returned a route without geometry"),
+                _finite_float(point[1], "OpenRouteService returned a route without geometry"),
+            ]
+        )
     raw_properties = feature.get("properties")
     properties: dict[str, Any] = raw_properties if isinstance(raw_properties, dict) else {}
     raw_summary = properties.get("summary")
@@ -86,21 +109,25 @@ def parse_ors_geojson(payload: dict[str, Any]) -> list[RouteAlternative]:
             if not isinstance(step, dict):
                 continue
             way_points = step.get("way_points") or [0]
-            begin = int(way_points[0]) if isinstance(way_points, list) and way_points else 0
+            begin = _shape_index(way_points[0]) if isinstance(way_points, list) and way_points else 0
             maneuvers.append(
                 Maneuver(
                     instruction=str(step.get("instruction") or ""),
                     type=step.get("type") if isinstance(step.get("type"), int) else None,
-                    distance_m=float(step.get("distance") or 0.0),
-                    duration_s=float(step.get("duration") or 0.0),
+                    distance_m=_finite_float(
+                        step.get("distance") or 0.0, "OpenRouteService returned malformed directions"
+                    ),
+                    duration_s=_finite_float(
+                        step.get("duration") or 0.0, "OpenRouteService returned malformed directions"
+                    ),
                     begin_shape_index=begin,
                 )
             )
     return [
         RouteAlternative(
             index=0,
-            distance_m=float(summary.get("distance") or 0.0),
-            duration_s=float(summary.get("duration") or 0.0),
+            distance_m=_finite_float(summary.get("distance") or 0.0, "OpenRouteService returned malformed directions"),
+            duration_s=_finite_float(summary.get("duration") or 0.0, "OpenRouteService returned malformed directions"),
             geometry={"type": "LineString", "coordinates": coordinates},
             maneuvers=maneuvers,
         )

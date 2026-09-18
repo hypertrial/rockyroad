@@ -172,6 +172,30 @@ def test_parse_ors_geojson_and_vroom_order() -> None:
     assert order == [0, 2, 1, 3]
 
 
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("features", 0, "geometry", "coordinates", 0, 0), float("nan")),
+        (("features", 0, "properties", "summary", "distance"), "invalid"),
+        (("features", 0, "properties", "segments", 0, "steps", 0, "duration"), float("inf")),
+        (("features", 0, "properties", "segments", 0, "steps", 0, "way_points", 0), "invalid"),
+        (("features", 0, "properties", "segments", 0, "steps", 0, "way_points", 0), float("inf")),
+    ],
+)
+def test_parse_ors_geojson_rejects_malformed_numeric_fields(path: tuple[object, ...], value: object) -> None:
+    payload = _geojson_route()
+    cursor: object = payload
+    for key in path[:-1]:
+        cursor = cursor[key]  # type: ignore[index]
+    cursor[path[-1]] = value  # type: ignore[index]
+
+    with pytest.raises(RoutingError) as exc:
+        parse_ors_geojson(payload)
+
+    assert exc.value.status_code == 502
+    assert "OpenRouteService" in str(exc.value)
+
+
 def test_parse_vroom_order_rejects_incomplete_results() -> None:
     with pytest.raises(RoutingError, match="every stop"):
         parse_vroom_order({"unassigned": [{"id": 1}], "routes": [{"steps": []}]}, 3)

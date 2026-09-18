@@ -19,7 +19,7 @@ RockyRoad is a monorepo:
 ./scripts/dev
 ```
 
-The script installs missing Python/frontend dependencies, copies `.env.example` if needed, then starts the API, waits up to 120 seconds for `/api/health`, and only then starts Vite. It exits if another RockyRoad API is already on `:8000`. First-time DuckDB extension installation can make API startup slower; override the wait when needed with `ROCKYROAD_DEV_API_TIMEOUT_SECONDS=240 ./scripts/dev`. Open `http://127.0.0.1:5173`. Vite proxies `/api` and `/maps` to FastAPI.
+The script installs missing Python/frontend dependencies, copies `.env.example` if needed, then starts the API, waits up to 120 seconds for `/api/health`, and only then starts Vite. The API defaults to `127.0.0.1:8000`; `ROCKYROAD_API_HOST` and `ROCKYROAD_API_PORT` from the environment or `.env` also drive readiness checks and the Vite proxy. It exits if another RockyRoad API is already on the configured endpoint. First-time DuckDB extension installation can make API startup slower; override the wait when needed with `ROCKYROAD_DEV_API_TIMEOUT_SECONDS=240 ./scripts/dev`. Open `http://127.0.0.1:5173`.
 
 Hosted mode is personal/self-hosted use: OpenFreeMap, OpenRouteService, and Photon have no SLA. OpenRouteService’s free plan is about 2,000 directions and 500 optimizations per day. Photon is a best-effort demo and needs an identifying User-Agent. The API keeps the ORS key server-side; the browser only loads OpenFreeMap tiles.
 

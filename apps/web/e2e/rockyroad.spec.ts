@@ -125,7 +125,7 @@ test("mobile planner keeps the map mounted through search, add, collapse, and ro
   await expect(page.getByRole("heading", { name: "Move Charlottetown" })).toBeVisible();
   await page.getByRole("searchbox", { name: "Search places" }).fill("Cavendish");
   await page.locator(".search-results > button", { hasText: "Cavendish National Park" }).click();
-  await expect(page.getByRole("button", { name: "Expand planner" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Expand planner" })).toBeFocused();
   expect(state.getTrip().stops).toHaveLength(2);
   expect(state.getTrip().stops[0]?.name).toBe("Cavendish National Park");
   await page.getByRole("button", { name: "Expand planner" }).click();
@@ -137,7 +137,7 @@ test("mobile planner keeps the map mounted through search, add, collapse, and ro
   await page.getByRole("tab", { name: "Search" }).click();
   await page.getByRole("searchbox", { name: "Search places" }).fill("Cavendish");
   await page.locator(".search-results > button", { hasText: "Cavendish National Park" }).click();
-  await expect(page.getByRole("button", { name: "Expand planner" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Expand planner" })).toBeFocused();
   expect(state.getTrip().stops).toHaveLength(3);
 
   await page.getByRole("button", { name: "Expand planner" }).click();
@@ -179,12 +179,27 @@ test("phone planner keeps every map control clear of the expanded sheet", async 
 
 test("planner survives invalid camera links and explains fatal map failures", async ({ page }) => {
   expectedResourceErrors = 1;
-  await mockRockyRoad(page, { mapStyleStatus: 500 });
+  const state = await mockRockyRoad(page, { mapStyleStatus: 500 });
   await page.goto("/trips/trip-1?lat=999&lng=-63&z=7");
 
-  await expect(page.getByRole("region", { name: "Interactive trip map" })).toBeVisible();
-  await expect(page.locator(".map-banner")).toContainText("map source is temporarily unavailable");
+  const map = page.getByRole("region", { name: "Interactive trip map" });
+  await expect(map).toBeVisible();
+  const banner = page.locator(".map-banner");
+  await expect(banner).toContainText("map source is temporarily unavailable");
+  await map.click({ position: { x: 140, y: 140 } });
+  await page.waitForTimeout(300);
+  await expect(banner).toContainText("map source is temporarily unavailable");
+  expect(state.getStopReplacementRequestCount()).toBe(0);
+  expect(state.getTrip().stops).toHaveLength(2);
   expect(browserErrors.some((message) => message.includes("Invalid LngLat"))).toBe(false);
+});
+
+test("planner renders initial markers when health resolves after the first render", async ({ page }) => {
+  await mockRockyRoad(page, { healthDelayMs: 250 });
+  await page.goto("/trips/trip-1?panel=stops");
+
+  await expect(page.getByRole("region", { name: "Interactive trip map" })).toBeVisible();
+  await expect(page.locator(".trip-marker")).toHaveCount(2);
 });
 
 test("desktop planner saves titles, exposes route failures, and keeps keyboard focus visible", async ({ page }) => {

@@ -4,6 +4,7 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 from rockyroad_data.paths import REPO_ROOT
@@ -11,11 +12,42 @@ from rockyroad_data.paths import REPO_ROOT
 
 def test_dev_script_probes_pmtiles_with_a_byte_range() -> None:
     script = (REPO_ROOT / "scripts" / "dev").read_text(encoding="utf-8")
-    assert '-r 0-0 "http://127.0.0.1:8000/maps/north-america.pmtiles"' in script
+    assert '-r 0-0 "$api_origin/maps/north-america.pmtiles"' in script
     assert "%{http_code}" in script
     assert 'curl -sf -o /dev/null "http://127.0.0.1:8000/maps/north-america.pmtiles"' not in script
-    assert '--max-time 1 "http://127.0.0.1:8000/api/ready"' in script
-    assert '--max-time 1 "http://127.0.0.1:8000/api/health"' in script
+    assert '--max-time 1 "$api_origin/api/ready"' in script
+    assert '--max-time 1 "$api_origin/api/health"' in script
+
+
+def test_secret_env_files_are_excluded_from_docker_build_context() -> None:
+    rules = (REPO_ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+    assert ".env" in rules
+    assert ".env.*" in rules
+    assert "!.env.example" in rules
+    assert rules.index("!.env.example") > rules.index(".env.*")
+
+
+def test_offline_smoke_uses_the_local_compose_profile() -> None:
+    script = (REPO_ROOT / "scripts" / "offline-smoke.sh").read_text(encoding="utf-8")
+    assert "docker-compose --profile local config" in script
+    assert "docker compose --profile local config" in script
+    assert "docker compose --profile local up --build" in script
+
+
+def test_make_fmt_only_invokes_installed_formatter() -> None:
+    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    fmt_recipe = makefile.split("fmt:\n", 1)[1].split("\nlint:", 1)[0]
+    assert "ruff format" in fmt_recipe
+    assert "prettier" not in fmt_recipe
+    assert "|| true" not in fmt_recipe
+
+
+def test_vite_proxies_to_the_server_only_dev_api_origin() -> None:
+    config = (REPO_ROOT / "apps" / "web" / "vite.config.ts").read_text(encoding="utf-8")
+    assert "ROCKYROAD_DEV_API_ORIGIN" in config
+    assert '"/api": apiOrigin' in config
+    assert '"/maps": apiOrigin' in config
+    assert "VITE_ROCKYROAD_DEV_API_ORIGIN" not in config
 
 
 def test_caddyfile_does_not_mark_pmtiles_immutable() -> None:
@@ -176,7 +208,17 @@ exit 0
 """,
         encoding="utf-8",
     )
-    (bin_dir / "uv").write_text("#!/bin/sh\n/bin/sleep 2\n", encoding="utf-8")
+    (bin_dir / "uv").write_text(
+        """#!/bin/sh
+while :; do
+  count=0
+  if [ -f "$ROCKYROAD_TEST_CURL_COUNT" ]; then count="$(cat "$ROCKYROAD_TEST_CURL_COUNT")"; fi
+  [ "${count:-0}" -ge 82 ] && exit 0
+  /bin/sleep 0.05
+done
+""",
+        encoding="utf-8",
+    )
     (bin_dir / "pnpm").write_text("#!/bin/sh\n/bin/sleep 0.1\n", encoding="utf-8")
     (bin_dir / "sleep").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     for path in bin_dir.iterdir():
@@ -188,10 +230,68 @@ exit 0
         "ROCKYROAD_DEV_API_TIMEOUT_SECONDS": "21",
         "ROCKYROAD_TEST_CURL_COUNT": str(count_file),
     }
-    result = subprocess.run([str(script)], cwd=root, env=env, text=True, capture_output=True, timeout=10, check=True)
+    result = subprocess.run([str(script)], cwd=root, env=env, text=True, capture_output=True, timeout=30, check=True)
 
     assert int(count_file.read_text(encoding="utf-8")) == 82
     assert "RockyRoad is running." in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("configured_host", "expected_origin"),
+    [
+        ("0.0.0.0", "http://127.0.0.1:9123"),
+        ("::", "http://[::1]:9123"),
+        ("::1", "http://[::1]:9123"),
+    ],
+)
+def test_dev_script_uses_configured_api_origin_for_health_and_vite(
+    tmp_path: Path, configured_host: str, expected_origin: str
+) -> None:
+    root = tmp_path / "repo"
+    scripts = root / "scripts"
+    scripts.mkdir(parents=True)
+    script = scripts / "dev"
+    script.write_text((REPO_ROOT / "scripts" / "dev").read_text(encoding="utf-8"), encoding="utf-8")
+    script.chmod(0o755)
+    for directory in (root / ".venv", root / "node_modules", root / "apps" / "web" / "node_modules"):
+        directory.mkdir(parents=True)
+    (root / ".env").write_text(
+        f"ROCKYROAD_API_HOST={configured_host}\nROCKYROAD_API_PORT=9123\nROCKYROAD_PROVIDER_MODE=hosted\n",
+        encoding="utf-8",
+    )
+
+    curl_log = tmp_path / "curl.log"
+    vite_origin = tmp_path / "vite-origin"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "curl").write_text(
+        """#!/bin/sh
+printf '%s\n' "$*" >> "$ROCKYROAD_TEST_CURL_LOG"
+case "$*" in *api/ready*) exit 1;; *api/health*) exit 0;; esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    (bin_dir / "uv").write_text("#!/bin/sh\n/bin/sleep 0.2\n", encoding="utf-8")
+    (bin_dir / "pnpm").write_text(
+        '#!/bin/sh\nprintf \'%s\' "$ROCKYROAD_DEV_API_ORIGIN" > "$ROCKYROAD_TEST_VITE_ORIGIN"\n',
+        encoding="utf-8",
+    )
+    for path in bin_dir.iterdir():
+        path.chmod(0o755)
+
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "ROCKYROAD_TEST_CURL_LOG": str(curl_log),
+        "ROCKYROAD_TEST_VITE_ORIGIN": str(vite_origin),
+    }
+    result = subprocess.run([str(script)], cwd=root, env=env, text=True, capture_output=True, timeout=10, check=True)
+
+    assert f"Starting RockyRoad API on {expected_origin}" in result.stdout
+    assert f"{expected_origin}/api/ready" in curl_log.read_text(encoding="utf-8")
+    assert f"{expected_origin}/api/health" in curl_log.read_text(encoding="utf-8")
+    assert vite_origin.read_text(encoding="utf-8") == expected_origin
 
 
 def test_compose_forwards_photon_user_agent() -> None:

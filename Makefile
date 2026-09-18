@@ -11,7 +11,6 @@ install-web:
 
 fmt:
 	$(UV) run ruff format services/api
-	$(PNPM) --filter @rockyroad/web exec prettier --write src index.html 2>/dev/null || true
 
 lint:
 	$(UV) run ruff check services/api

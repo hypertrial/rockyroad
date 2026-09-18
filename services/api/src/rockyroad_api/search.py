@@ -90,7 +90,8 @@ def search_places(
                 params,
             ).fetchall()
         except Exception:
-            like = f"%{cleaned.casefold()}%"
+            escaped = cleaned.casefold().replace("!", "!!").replace("%", "!%").replace("_", "!_")
+            like = f"%{escaped}%"
             return conn.execute(
                 """
                 SELECT
@@ -106,7 +107,7 @@ def search_places(
                     type_prior,
                     1.0 AS bm25
                 FROM geo_features
-                WHERE (normalized_name LIKE ? OR search_text LIKE ?)
+                WHERE (normalized_name LIKE ? ESCAPE '!' OR search_text LIKE ? ESCAPE '!')
                 LIMIT ?
                 """,
                 [like, like, max_results * 5],

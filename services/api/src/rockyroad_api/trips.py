@@ -347,6 +347,10 @@ def _replace_stops(conn: Any, trip_id: UUID, stops: list[StopIn]) -> None:
     stop_ids = [stop.id for stop in stops if stop.id is not None]
     if len(stop_ids) != len(set(stop_ids)):
         raise ValueError("stop ids must be unique")
+    for stop_id in stop_ids:
+        owner = conn.execute("SELECT trip_id FROM trip_stops WHERE id = ?", [str(stop_id)]).fetchone()
+        if owner is not None and str(owner[0]) != str(trip_id):
+            raise ValueError("stop id belongs to another trip")
     conn.execute("DELETE FROM trip_stops WHERE trip_id = ?", [str(trip_id)])
     for index, stop in enumerate(stops):
         conn.execute(

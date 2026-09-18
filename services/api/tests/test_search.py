@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from rockyroad_api.db import Database
 from rockyroad_api.models import Viewport
-from rockyroad_api.search import rank_rows
+from rockyroad_api.search import rank_rows, search_places
 
 
 def test_rank_prefers_important_nearby_city() -> None:
@@ -51,3 +52,21 @@ def test_rank_keeps_places_outside_viewport() -> None:
     )
     assert ranked[0]["name"] == "Charlottetown"
     assert ranked[0]["distance_km"] > 0
+
+
+def test_fallback_search_treats_like_metacharacters_literally(db: Database) -> None:
+    rows = [
+        ("percent", "Percent % Place", "percent % place"),
+        ("underscore", "Under_score Place", "under_score place"),
+        ("bang", "Bang! Place", "bang! place"),
+        ("plain", "Plain Place", "plain place"),
+    ]
+    for place_id, name, normalized in rows:
+        db.conn.execute(
+            "INSERT INTO geo_features VALUES (?, 'test', ?, ?, ?, 'place', -63.13, 46.24, NULL, 0.1, 0.1, 0.1, NULL)",
+            [place_id, name, normalized, normalized],
+        )
+
+    assert [result.id for result in search_places(db, "%").results] == ["percent"]
+    assert [result.id for result in search_places(db, "_").results] == ["underscore"]
+    assert [result.id for result in search_places(db, "!").results] == ["bang"]

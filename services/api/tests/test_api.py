@@ -191,6 +191,27 @@ def test_duplicate_stop_ids_return_validation_error(client: TestClient) -> None:
     assert "unique" in response.json()["detail"]
 
 
+def test_cross_trip_stop_id_returns_validation_error_without_mutation(client: TestClient) -> None:
+    first = client.post(
+        "/api/trips",
+        json={"name": "First", "stops": [{"name": "A", "lon": -63.131, "lat": 46.238}]},
+    ).json()
+    second = client.post(
+        "/api/trips",
+        json={"name": "Second", "stops": [{"name": "B", "lon": -63.79, "lat": 46.393}]},
+    ).json()
+
+    response = client.put(
+        f"/api/trips/{second['id']}/stops",
+        json=[{"id": first["stops"][0]["id"], "name": "Stolen", "lon": -63.5, "lat": 46.3}],
+    )
+
+    assert response.status_code == 422
+    assert "another trip" in response.json()["detail"]
+    assert [stop["name"] for stop in client.get(f"/api/trips/{first['id']}").json()["stops"]] == ["A"]
+    assert [stop["name"] for stop in client.get(f"/api/trips/{second['id']}").json()["stops"]] == ["B"]
+
+
 def test_route_rejects_stops_outside_sample_extract(client: TestClient, settings: Settings) -> None:
     (settings.osm_dir / "manifest.json").write_text(json.dumps({"profile": "sample"}), encoding="utf-8")
     created = client.post("/api/trips", json={"name": "Prairie"})

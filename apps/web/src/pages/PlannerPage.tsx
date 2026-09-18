@@ -42,6 +42,7 @@ export function PlannerPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [draftName, setDraftName] = useState("");
   const skipNextBlurRef = useRef(false);
+  const sheetToggleRef = useRef<HTMLButtonElement | null>(null);
   const trip = tripQuery.data;
 
   useEffect(() => {
@@ -91,6 +92,9 @@ export function PlannerPage() {
       setEditingStopId(null);
       updatePlannerSearch({ panel: "stops", stop: id });
       setSheetExpanded(false);
+      if (window.matchMedia("(max-width: 899px)").matches) {
+        window.requestAnimationFrame(() => sheetToggleRef.current?.focus());
+      }
       setNotice({
         message: editingStopId ? `${place.name} replaced the stop location.` : `${place.name} added to the trip.`,
         variant: "success",
@@ -266,6 +270,7 @@ export function PlannerPage() {
     <main id="main-content" className="planner-shell" tabIndex={-1}>
       <aside className="planner-panel" data-expanded={sheetExpanded} aria-label="Trip planner">
         <button
+          ref={sheetToggleRef}
           type="button"
           className="sheet-toggle"
           aria-expanded={sheetExpanded}

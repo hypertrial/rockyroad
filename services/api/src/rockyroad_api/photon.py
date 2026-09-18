@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from typing import Any, cast
 
 import httpx
@@ -57,7 +58,9 @@ def map_photon_features(payload: dict[str, Any], *, query: str, limit: int) -> S
         try:
             lon = float(coordinates[0])
             lat = float(coordinates[1])
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not math.isfinite(lon) or not math.isfinite(lat) or not -180 <= lon <= 180 or not -90 <= lat <= 90:
             continue
         name = _photon_name(properties)
         osm_type = str(properties.get("osm_type") or "x")

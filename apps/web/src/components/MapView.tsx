@@ -89,6 +89,7 @@ export function MapView({
   const fittedRouteNonceRef = useRef(0);
   const previousSelectedStopRef = useRef<string | null | undefined>(undefined);
   const suppressMapClickRef = useRef(false);
+  const mapFailureRef = useRef<string | null>(null);
   const navigate = useNavigate();
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
@@ -103,6 +104,8 @@ export function MapView({
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const [clickHint, setClickHint] = useState<string | null>(null);
+  const [mapFailure, setMapFailure] = useState<string | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const boundsRef = useRef(health.data?.bounds ?? null);
   boundsRef.current = health.data?.bounds ?? null;
@@ -132,6 +135,8 @@ export function MapView({
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     map.on("load", () => {
+      mapFailureRef.current = null;
+      setMapFailure(null);
       collapseCompactAttribution(map);
       syncTripRouteLayer(map as unknown as RouteMap, selectedRef.current?.geometry);
       if (!hasExplicitCamera(initialSearchRef.current) && tripRef.current.stops.length) {
@@ -141,10 +146,13 @@ export function MapView({
     map.on("error", (event) => {
       const error = event.error as { status?: number; message?: string } | undefined;
       const message = mapLoadFailure(error);
-      if (message) setClickHint(message);
+      if (message) {
+        mapFailureRef.current = message;
+        setMapFailure(message);
+      }
     });
     map.on("click", (event) => {
-      if (draggingStopIdRef.current || suppressMapClickRef.current || writeLockedRef.current) return;
+      if (mapFailureRef.current || draggingStopIdRef.current || suppressMapClickRef.current || writeLockedRef.current) return;
       const { lng, lat } = event.lngLat;
       const committed = commitMapPoint(lng, lat, boundsRef.current);
       if (!committed.ok) {
@@ -178,10 +186,12 @@ export function MapView({
     const observer = new ResizeObserver(() => map.resize());
     observer.observe(map.getContainer());
     mapRef.current = map;
+    setMapReady(true);
     return () => {
       observer.disconnect();
       map.remove();
       mapRef.current = null;
+      mapFailureRef.current = null;
     };
   }, [healthReady]);
 
@@ -198,6 +208,8 @@ export function MapView({
     appliedStyleRef.current = styleKey;
     map.setStyle(plannerMapStyle(health.data));
     map.once("style.load", () => {
+      mapFailureRef.current = null;
+      setMapFailure(null);
       collapseCompactAttribution(map);
       syncTripRouteLayer(map as unknown as RouteMap, selectedRef.current?.geometry);
     });
@@ -247,7 +259,7 @@ export function MapView({
       });
       return marker;
     });
-  }, [selectedStopId, trip.stops, writeLocked]);
+  }, [mapReady, selectedStopId, trip.stops, writeLocked]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -316,6 +328,8 @@ export function MapView({
       ) : null}
       {!mapsAvailable ? (
         <div className="map-banner" role="alert">{health.data?.detail ?? "The map source is unavailable."}</div>
+      ) : mapFailure ? (
+        <div className="map-banner" role="alert">{mapFailure}</div>
       ) : clickHint ? (
         <div className="map-banner" role="status">{clickHint}</div>
       ) : null}

@@ -79,6 +79,11 @@ def test_map_photon_features_skips_malformed() -> None:
                 "properties": {"name": "Calgary", "osm_type": "N", "osm_id": 9, "osm_value": "city"},
             },
             {"geometry": {"coordinates": ["bad"]}, "properties": {"name": "Nope"}},
+            _feature("NaN", float("nan"), 51.05, 10),
+            _feature("Infinite", -114.07, float("inf"), 11),
+            _feature("Invalid longitude", 181, 51.05, 12),
+            _feature("Invalid latitude", -114.07, -91, 13),
+            _feature("Overflow", 10**400, 51.05, 14),
             {"not": "a feature"},
         ]
     }

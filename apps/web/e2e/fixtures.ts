@@ -9,6 +9,7 @@ type MockOptions = {
   longDirections?: boolean;
   providerMode?: "hosted" | "local";
   tripListDelayMs?: number;
+  healthDelayMs?: number;
   tripListFailureCount?: number;
   tripName?: string;
   routeSettingsFailure?: boolean;
@@ -120,6 +121,7 @@ export async function mockRockyRoad(page: Page, options: MockOptions = {}) {
   let tripListRequests = 0;
   let deleteRequests = 0;
   let routeRequests = 0;
+  let stopReplacementRequests = 0;
 
   const fulfillMapStyle = (route: Route) =>
     json(route, {
@@ -147,6 +149,9 @@ export async function mockRockyRoad(page: Page, options: MockOptions = {}) {
     const method = request.method();
 
     if (pathname === "/api/health") {
+      if (options.healthDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.healthDelayMs));
+      }
       return json(route, {
         status: options.degraded ? "degraded" : "ok",
         duckdb: true,
@@ -217,6 +222,7 @@ export async function mockRockyRoad(page: Page, options: MockOptions = {}) {
     }
 
     if (pathname === "/api/trips/trip-1/stops" && method === "PUT") {
+      stopReplacementRequests += 1;
       const drafts = request.postDataJSON() as Array<{ id?: string; name: string; lon: number; lat: number; place_id: string | null }>;
       trip = {
         ...trip,
@@ -261,5 +267,6 @@ export async function mockRockyRoad(page: Page, options: MockOptions = {}) {
   return {
     getTrip: () => trip,
     isDeleted: () => deleted,
+    getStopReplacementRequestCount: () => stopReplacementRequests,
   };
 }

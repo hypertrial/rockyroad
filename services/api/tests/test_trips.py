@@ -193,3 +193,20 @@ def test_replace_stops_rejects_duplicate_ids_before_writing(db: Database) -> Non
     current = get_trip(db, trip.id)
     assert current is not None
     assert [stop.name for stop in current.stops] == ["Charlottetown", "Summerside"]
+
+
+def test_replace_stops_rejects_id_owned_by_another_trip_before_writing(db: Database) -> None:
+    first = create_trip(db, TripCreate(name="First", stops=[CHARLOTTETOWN]))
+    second = create_trip(db, TripCreate(name="Second", stops=[SUMMERSIDE]))
+
+    with pytest.raises(ValueError, match="another trip"):
+        replace_stops(
+            db,
+            second.id,
+            [StopIn(id=first.stops[0].id, name="Stolen", lon=-63.5, lat=46.3)],
+        )
+
+    current_first = get_trip(db, first.id)
+    current_second = get_trip(db, second.id)
+    assert current_first is not None and [stop.name for stop in current_first.stops] == ["Charlottetown"]
+    assert current_second is not None and [stop.name for stop in current_second.stops] == ["Summerside"]

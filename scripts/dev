@@ -18,6 +18,47 @@ if [[ ! -f .env && -f .env.example ]]; then
   cp .env.example .env
 fi
 
+dotenv_value() {
+  local key="$1"
+  if [[ ! -f .env ]]; then
+    return 0
+  fi
+  awk -F= -v key="$key" '$1 == key {value=substr($0, index($0, "=") + 1)} END {print value}' .env \
+    | tr -d '[:space:]' \
+    | tr -d "\"'"
+}
+
+if [[ "${ROCKYROAD_API_HOST+x}" == "x" ]]; then
+  api_host="$ROCKYROAD_API_HOST"
+else
+  api_host="$(dotenv_value ROCKYROAD_API_HOST)"
+fi
+api_host="${api_host:-127.0.0.1}"
+
+if [[ "${ROCKYROAD_API_PORT+x}" == "x" ]]; then
+  api_port="$ROCKYROAD_API_PORT"
+else
+  api_port="$(dotenv_value ROCKYROAD_API_PORT)"
+fi
+api_port="${api_port:-8000}"
+if [[ ! "$api_port" =~ ^[1-9][0-9]*$ ]] || ((api_port > 65535)); then
+  echo "ROCKYROAD_API_PORT must be a whole number from 1 to 65535."
+  exit 1
+fi
+
+api_probe_host="$api_host"
+if [[ "$api_probe_host" == "0.0.0.0" ]]; then
+  api_probe_host="127.0.0.1"
+elif [[ "$api_probe_host" == "::" || "$api_probe_host" == "[::]" ]]; then
+  api_probe_host="::1"
+fi
+api_url_host="$api_probe_host"
+if [[ "$api_url_host" == *:* && "$api_url_host" != \[*\] ]]; then
+  api_url_host="[$api_url_host]"
+fi
+api_origin="http://${api_url_host}:${api_port}"
+export ROCKYROAD_DEV_API_ORIGIN="$api_origin"
+
 api_pid=""
 web_pid=""
 
@@ -39,14 +80,14 @@ cleanup() {
 
 trap cleanup INT TERM EXIT
 
-if curl -sf --connect-timeout 1 --max-time 1 "http://127.0.0.1:8000/api/ready" >/dev/null 2>&1; then
-  echo "Port 8000 is already in use. Stop the other RockyRoad API and rerun ./scripts/dev."
+if curl -sf --connect-timeout 1 --max-time 1 "$api_origin/api/ready" >/dev/null 2>&1; then
+  echo "Port $api_port is already in use. Stop the other RockyRoad API and rerun ./scripts/dev."
   exit 1
 fi
 
 export PYTHONPATH="$root/services/api/src${PYTHONPATH:+:$PYTHONPATH}"
 
-echo "Starting RockyRoad API on http://127.0.0.1:8000"
+echo "Starting RockyRoad API on $api_origin"
 uv run rockyroad-api &
 api_pid=$!
 
@@ -64,7 +105,7 @@ while ((SECONDS - started_at < api_timeout_seconds)); do
     echo "API process exited before it became ready."
     exit 1
   fi
-  if curl -sf --connect-timeout 1 --max-time 1 "http://127.0.0.1:8000/api/health" >/dev/null; then
+  if curl -sf --connect-timeout 1 --max-time 1 "$api_origin/api/health" >/dev/null; then
     ready=1
     break
   fi
@@ -77,7 +118,7 @@ while ((SECONDS - started_at < api_timeout_seconds)); do
 done
 
 if [[ "$ready" -ne 1 ]]; then
-  echo "API did not become ready within ${api_timeout_seconds}s on http://127.0.0.1:8000/api/health"
+  echo "API did not become ready within ${api_timeout_seconds}s on $api_origin/api/health"
   echo "Review the API startup output above, or run this command directly for diagnostics:"
   echo "  PYTHONPATH=services/api/src uv run rockyroad-api"
   echo "For unusually slow first-time setup, retry with a larger timeout:"
@@ -93,7 +134,7 @@ provider_mode=""
 if [[ "${ROCKYROAD_PROVIDER_MODE+x}" == "x" ]]; then
   provider_mode="$ROCKYROAD_PROVIDER_MODE"
 elif [[ -f .env ]]; then
-  provider_mode="$(awk -F= '/^ROCKYROAD_PROVIDER_MODE=/{value=$2} END{print value}' .env | tr -d '[:space:]' | tr -d "\"'")"
+  provider_mode="$(dotenv_value ROCKYROAD_PROVIDER_MODE)"
 fi
 provider_mode="${provider_mode:-hosted}"
 
@@ -115,7 +156,7 @@ if [[ "$provider_mode" == "local" ]]; then
     fi
   fi
 
-  maps_code="$(curl -sS -o /dev/null -w '%{http_code}' -r 0-0 "http://127.0.0.1:8000/maps/north-america.pmtiles" || true)"
+  maps_code="$(curl -sS -o /dev/null -w '%{http_code}' -r 0-0 "$api_origin/maps/north-america.pmtiles" || true)"
   if [[ "${maps_code}" != "200" && "${maps_code}" != "206" && "${maps_code}" != "304" ]]; then
     echo "PMTiles are not built yet (GET /maps/north-america.pmtiles → ${maps_code:-failed})."
     echo "  uv run rockyroad-data update-osm --profile sample"
@@ -127,7 +168,7 @@ else
   if [[ "${ROCKYROAD_ORS_API_KEY+x}" == "x" ]]; then
     ors_key="$ROCKYROAD_ORS_API_KEY"
   elif [[ -f .env ]]; then
-    ors_key="$(awk -F= '/^ROCKYROAD_ORS_API_KEY=/{value=$2} END{print value}' .env | tr -d '[:space:]' | tr -d "\"'")"
+    ors_key="$(dotenv_value ROCKYROAD_ORS_API_KEY)"
   fi
   if [[ -z "$ors_key" ]]; then
     echo "Hosted routing needs ROCKYROAD_ORS_API_KEY in .env (https://openrouteservice.org/)."
@@ -138,9 +179,9 @@ fi
 echo
 echo "RockyRoad is running."
 echo "  App  http://127.0.0.1:5173"
-echo "  API  http://127.0.0.1:8000/api/health"
+echo "  API  $api_origin/api/health"
 if [[ "$provider_mode" == "local" ]]; then
-  echo "  Maps http://127.0.0.1:8000/maps/north-america.pmtiles"
+  echo "  Maps $api_origin/maps/north-america.pmtiles"
 else
   echo "  Map  OpenFreeMap Liberty (see /api/health map_style_url)"
 fi

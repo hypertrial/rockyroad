@@ -104,7 +104,7 @@ On the first Compose start after upgrading from the former bind-mounted database
 ./scripts/dev
 ```
 
-That starts FastAPI on `:8000`, waits until `/api/health` responds, then starts Vite on `:5173`. It exits if another RockyRoad API is already answering `/api/ready` on `:8000`. Vite proxies `/api` and `/maps` to the API.
+That starts FastAPI on `127.0.0.1:8000` by default, waits until `/api/health` responds, then starts Vite on `:5173`. `ROCKYROAD_API_HOST` and `ROCKYROAD_API_PORT` may override the API endpoint; the readiness checks and Vite `/api` and `/maps` proxies follow the configured address. The launcher exits if another RockyRoad API is already answering `/api/ready` there.
 
 Hosted `/api/health` reports `provider_mode`, OpenFreeMap `map_style_url`, Canada+USA `bounds`, and whether `ROCKYROAD_ORS_API_KEY` is present. It does not probe third parties on every request.
 

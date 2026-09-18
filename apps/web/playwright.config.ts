@@ -4,6 +4,8 @@ export default defineConfig({
   testDir: "./e2e",
   outputDir: "./test-results",
   fullyParallel: true,
+  workers: 3,
+  expect: { timeout: 10_000 },
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
