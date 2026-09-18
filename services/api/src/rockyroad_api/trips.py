@@ -48,6 +48,7 @@ def _row_stop(row: tuple[Any, ...]) -> StopOut:
         lat=row[5],
         place_id=row[6],
         created_at=row[7],
+        region=row[8],
     )
 
 
@@ -87,12 +88,22 @@ def apply_optimized_order(stops: list[StopOut], order: list[int]) -> list[StopOu
 
 
 def _as_stop_in(stops: list[StopOut]) -> list[StopIn]:
-    return [StopIn(id=stop.id, name=stop.name, lon=stop.lon, lat=stop.lat, place_id=stop.place_id) for stop in stops]
+    return [
+        StopIn(
+            id=stop.id,
+            name=stop.name,
+            lon=stop.lon,
+            lat=stop.lat,
+            place_id=stop.place_id,
+            region=stop.region,
+        )
+        for stop in stops
+    ]
 
 
 def _routing_revision(trip: TripOut) -> tuple[object, ...]:
     return (
-        tuple((stop.id, stop.name, stop.lon, stop.lat, stop.place_id) for stop in trip.stops),
+        tuple((stop.id, stop.name, stop.lon, stop.lat, stop.place_id, stop.region) for stop in trip.stops),
         trip.settings.avoid_tolls,
         trip.settings.avoid_highways,
         trip.settings.avoid_ferries,
@@ -116,7 +127,7 @@ def get_trip(db: Database, trip_id: UUID) -> TripOut | None:
             _row_stop(row)
             for row in conn.execute(
                 """
-                SELECT id, trip_id, position, name, lon, lat, place_id, created_at
+                SELECT id, trip_id, position, name, lon, lat, place_id, created_at, region
                 FROM trip_stops
                 WHERE trip_id = ?
                 ORDER BY position
@@ -285,7 +296,7 @@ def optimize_trip(db: Database, client: RouteProvider, trip_id: UUID) -> RouteRe
 def list_saved_places(db: Database) -> list[SavedPlaceOut]:
     rows = db.conn.execute(
         """
-        SELECT id, name, lon, lat, place_id, notes, created_at
+        SELECT id, name, lon, lat, place_id, notes, created_at, region
         FROM saved_places
         ORDER BY created_at DESC
         """
@@ -299,6 +310,7 @@ def list_saved_places(db: Database) -> list[SavedPlaceOut]:
             place_id=row[4],
             notes=row[5],
             created_at=row[6],
+            region=row[7],
         )
         for row in rows
     ]
@@ -310,13 +322,24 @@ def create_saved_place(db: Database, payload: SavedPlaceIn) -> SavedPlaceOut:
 
     def _write(conn: Any) -> None:
         conn.execute(
-            "INSERT INTO saved_places VALUES (?, ?, ?, ?, ?, ?, now())",
-            [str(place_id), payload.name, payload.lon, payload.lat, payload.place_id, payload.notes],
+            """
+            INSERT INTO saved_places (id, name, lon, lat, place_id, notes, region, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, now())
+            """,
+            [
+                str(place_id),
+                payload.name,
+                payload.lon,
+                payload.lat,
+                payload.place_id,
+                payload.notes,
+                payload.region,
+            ],
         )
 
     db.write(_write)
     row = db.conn.execute(
-        "SELECT id, name, lon, lat, place_id, notes, created_at FROM saved_places WHERE id = ?",
+        "SELECT id, name, lon, lat, place_id, notes, created_at, region FROM saved_places WHERE id = ?",
         [str(place_id)],
     ).fetchone()
     assert row is not None
@@ -328,6 +351,7 @@ def create_saved_place(db: Database, payload: SavedPlaceIn) -> SavedPlaceOut:
         place_id=row[4],
         notes=row[5],
         created_at=row[6],
+        region=row[7],
     )
 
 
@@ -354,7 +378,10 @@ def _replace_stops(conn: Any, trip_id: UUID, stops: list[StopIn]) -> None:
     conn.execute("DELETE FROM trip_stops WHERE trip_id = ?", [str(trip_id)])
     for index, stop in enumerate(stops):
         conn.execute(
-            "INSERT INTO trip_stops VALUES (?, ?, ?, ?, ?, ?, ?, now())",
+            """
+            INSERT INTO trip_stops (id, trip_id, position, name, lon, lat, place_id, region, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, now())
+            """,
             [
                 str(stop.id or uuid.uuid4()),
                 str(trip_id),
@@ -363,6 +390,7 @@ def _replace_stops(conn: Any, trip_id: UUID, stops: list[StopIn]) -> None:
                 stop.lon,
                 stop.lat,
                 stop.place_id,
+                stop.region,
             ],
         )
 

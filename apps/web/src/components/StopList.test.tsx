@@ -33,6 +33,7 @@ const trip: Trip = {
       lat: 46.24,
       place_id: "place-a",
       created_at: "2026-01-01T00:00:00Z",
+      region: "Prince Edward Island, Canada",
     },
     {
       id: "b",
@@ -43,6 +44,7 @@ const trip: Trip = {
       lat: 46.39,
       place_id: null,
       created_at: "2026-01-01T00:00:00Z",
+      region: null,
     },
   ],
 };
@@ -66,7 +68,7 @@ describe("StopList", () => {
     const onSelect = vi.fn();
     renderStops({ selectedStopId: "a", onSelect });
 
-    expect(screen.getByRole("button", { name: /Charlottetown 46\.240/ })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: /Charlottetown Prince Edward Island, Canada/ })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -95,6 +97,7 @@ describe("StopList", () => {
         lon: -63.79,
         lat: 46.39,
         place_id: null,
+        region: null,
       },
       {
         id: "a",
@@ -102,6 +105,7 @@ describe("StopList", () => {
         lon: -63.13,
         lat: 46.24,
         place_id: "place-a",
+        region: "Prince Edward Island, Canada",
       },
     ]);
   });
@@ -134,6 +138,14 @@ describe("StopList", () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(onReplace).not.toHaveBeenCalled();
     expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it("shows a persisted region instead of coordinates when one is present", () => {
+    renderStops();
+
+    expect(screen.getByText("Prince Edward Island, Canada")).toBeInTheDocument();
+    expect(screen.getByText("46.390, -63.790")).toBeInTheDocument();
+    expect(screen.queryByText("46.240, -63.130")).not.toBeInTheDocument();
   });
 
   it("renders actionable empty-state guidance for a new trip", () => {

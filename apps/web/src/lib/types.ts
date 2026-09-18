@@ -7,6 +7,13 @@ export type PlaceResult = {
   lat: number;
   score: number;
   population: number | null;
+  city?: string | null;
+  county?: string | null;
+  state?: string | null;
+  country?: string | null;
+  country_code?: string | null;
+  place_type?: string | null;
+  region?: string | null;
 };
 
 export type SearchResponse = {
@@ -23,6 +30,7 @@ export type Stop = {
   lat: number;
   place_id: string | null;
   created_at: string;
+  region: string | null;
 };
 
 export type TripSettings = {

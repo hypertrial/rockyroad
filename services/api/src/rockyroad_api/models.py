@@ -27,6 +27,13 @@ class Viewport(BaseModel):
     def center(self) -> tuple[float, float]:
         return ((self.west + self.east) / 2.0, (self.south + self.north) / 2.0)
 
+    def contains(self, lon: float, lat: float) -> bool:
+        if not self.south <= lat <= self.north:
+            return False
+        if self.west <= self.east:
+            return self.west <= lon <= self.east
+        return lon >= self.west or lon <= self.east
+
 
 class PlaceResult(BaseModel):
     id: str
@@ -37,6 +44,13 @@ class PlaceResult(BaseModel):
     lat: float
     score: float
     population: int | None = None
+    city: str | None = None
+    county: str | None = None
+    state: str | None = None
+    country: str | None = None
+    country_code: str | None = None
+    place_type: str | None = None
+    region: str | None = None
 
 
 class SearchResponse(BaseModel):
@@ -50,6 +64,7 @@ class StopIn(BaseModel):
     lon: float
     lat: float
     place_id: str | None = None
+    region: str | None = Field(default=None, max_length=200)
 
     @field_validator("lon", "lat")
     @classmethod
@@ -72,6 +87,7 @@ class StopOut(BaseModel):
     lat: float
     place_id: str | None
     created_at: datetime
+    region: str | None = None
 
 
 class TripSettingsIn(BaseModel):
@@ -146,6 +162,7 @@ class SavedPlaceIn(BaseModel):
     lat: float
     place_id: str | None = None
     notes: str | None = None
+    region: str | None = Field(default=None, max_length=200)
 
     def validate_location(self) -> SavedPlaceIn:
         validate_na_coordinate(self.lon, self.lat)
@@ -160,6 +177,7 @@ class SavedPlaceOut(BaseModel):
     place_id: str | None
     notes: str | None
     created_at: datetime
+    region: str | None = None
 
 
 class RecentSearchOut(BaseModel):

@@ -37,6 +37,7 @@ export function PlannerPage() {
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const [editingStopId, setEditingStopId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<ViewportBounds | null>(null);
+  const [previewPlace, setPreviewPlace] = useState<PlaceResult | null>(null);
   const [notice, setNotice] = useState<PlannerNotice | null>(null);
   const [fitRouteNonce, setFitRouteNonce] = useState(0);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -80,12 +81,19 @@ export function PlannerPage() {
     const next = editingStopId
       ? toStopDrafts(current.stops).map((stop) =>
           stop.id === editingStopId
-            ? { ...stop, name: place.name, lon: place.lon, lat: place.lat, place_id: place.id }
-            : stop,
+            ? {
+                ...stop,
+                name: place.name,
+                lon: place.lon,
+                lat: place.lat,
+                place_id: place.id,
+                region: place.region ?? null,
+              }
+          : stop,
         )
       : [
           ...toStopDrafts(current.stops),
-          { id, name: place.name, lon: place.lon, lat: place.lat, place_id: place.id },
+          { id, name: place.name, lon: place.lon, lat: place.lat, place_id: place.id, region: place.region ?? null },
         ];
     try {
       await actions.replaceStops(next);
@@ -112,7 +120,7 @@ export function PlannerPage() {
     try {
       await actions.replaceStops([
         ...stops,
-        { id, name: `Stop ${stops.length + 1}`, lon, lat, place_id: null },
+        { id, name: `Stop ${stops.length + 1}`, lon, lat, place_id: null, region: null },
       ]);
       updatePlannerSearch({ panel: "stops", stop: id });
       setNotice({ message: `Stop ${stops.length + 1} added from the map.`, variant: "success" });
@@ -230,6 +238,7 @@ export function PlannerPage() {
     activePanel === "search" ? (
       <SearchBox
         onSelect={addOrReplacePlace}
+        onPreview={setPreviewPlace}
         health={health.data}
         viewport={viewport}
         disabled={actions.busy}
@@ -335,7 +344,12 @@ export function PlannerPage() {
             >
               {editingStop && activePanel === "search" ? (
                 <div className="edit-stop-banner">
-                  <span>Changing location for <strong>{editingStop.name}</strong></span>
+                  <span>
+                    Changing location for{" "}
+                    <strong>
+                      {editingStop.region ? `${editingStop.name} · ${editingStop.region}` : editingStop.name}
+                    </strong>
+                  </span>
                   <button type="button" onClick={() => setEditingStopId(null)}>Cancel</button>
                 </div>
               ) : null}
@@ -418,6 +432,7 @@ export function PlannerPage() {
         selectedStopId={selectedStopId}
         writeLocked={actions.busy}
         fitRouteNonce={fitRouteNonce}
+        previewPlace={activePanel === "search" ? previewPlace : null}
         onViewportChange={setViewport}
         onSelectStop={(stopId) => updatePlannerSearch({ panel: "stops", stop: stopId })}
         onAddStop={(lon, lat) => void addMapStop(lon, lat)}

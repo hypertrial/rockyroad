@@ -247,6 +247,11 @@
   font-size: 0.72rem;
 }
 
+.search-result-copy .muted {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .search-result-coordinates {
   flex: 0 0 auto;
   color: var(--color-ink-faint);
@@ -871,6 +876,20 @@
 
 .trip-marker[data-dragging="true"] {
   cursor: grabbing;
+}
+
+.search-preview-marker {
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 3px solid white;
+  border-radius: 50%;
+  background: var(--color-rust);
+  box-shadow: 0 0 0 4px rgba(185, 87, 50, 0.28), 0 4px 10px rgba(24, 35, 30, 0.3);
+  pointer-events: none;
+}
+
+.maplibregl-marker:has(.search-preview-marker) {
+  pointer-events: none;
 }
 
 .planner-notice-layer {

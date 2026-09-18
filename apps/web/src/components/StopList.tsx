@@ -17,9 +17,10 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { ChevronDown, ChevronUp, GripVertical, LocateFixed, PencilLine, Trash2 } from "lucide-react";
 import type { CSSProperties } from "react";
+import { toStopDrafts, type StopDraft } from "../lib/mapInteraction";
 import type { Stop, Trip } from "../lib/types";
 
-export type DraftStop = Pick<Stop, "name" | "lon" | "lat" | "place_id"> & { id?: string };
+export type DraftStop = StopDraft;
 
 type Props = {
   trip: Trip;
@@ -32,7 +33,7 @@ type Props = {
 };
 
 function toDrafts(stops: Stop[]): DraftStop[] {
-  return stops.map(({ id, name, lon, lat, place_id }) => ({ id, name, lon, lat, place_id }));
+  return toStopDrafts(stops);
 }
 
 type SortableStopProps = {
@@ -89,7 +90,7 @@ function SortableStop({
         <span className="stop-index" aria-hidden="true">{index + 1}</span>
         <span className="stop-copy">
           <strong>{stop.name}</strong>
-          <span>{stop.lat.toFixed(3)}, {stop.lon.toFixed(3)}</span>
+          <span>{stop.region ?? `${stop.lat.toFixed(3)}, ${stop.lon.toFixed(3)}`}</span>
         </span>
         <LocateFixed aria-hidden="true" size={18} />
       </button>

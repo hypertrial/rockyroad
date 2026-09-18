@@ -1,12 +1,15 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { LoaderCircle, Search, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
+import { formatDistance } from "../lib/format";
+import { haversineMeters, viewportCenter } from "../lib/geo";
 import type { HealthResponse, PlaceResult, ViewportBounds } from "../lib/types";
 import { StatusNotice } from "./StatusNotice";
 
 type Props = {
   onSelect: (place: PlaceResult) => void | Promise<void>;
+  onPreview?: (place: PlaceResult | null) => void;
   health?: HealthResponse;
   viewport: ViewportBounds | null;
   disabled?: boolean;
@@ -26,11 +29,24 @@ function formatFeatureType(value: string): string {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-export function SearchBox({ onSelect, health, viewport, disabled = false, editingName }: Props) {
+function resultSubtitle(place: PlaceResult): string {
+  const kind = formatFeatureType(place.feature_type);
+  return place.region ? `${kind} · ${place.region}` : kind;
+}
+
+function resultDistanceLabel(place: PlaceResult, viewport: ViewportBounds | null): string {
+  const center = viewportCenter(viewport);
+  if (!center) return `${place.lat.toFixed(2)}, ${place.lon.toFixed(2)}`;
+  return formatDistance(haversineMeters(center.lon, center.lat, place.lon, place.lat));
+}
+
+export function SearchBox({ onSelect, onPreview, health, viewport, disabled = false, editingName }: Props) {
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebouncedValue(query, 300);
   const hosted = health?.provider_mode === "hosted";
   const hasActiveQuery = query.trim().length >= 2;
+  const onPreviewRef = useRef(onPreview);
+  onPreviewRef.current = onPreview;
   const search = useQuery({
     queryKey: ["search", debouncedQuery, viewport],
     queryFn: () => api.search(debouncedQuery, viewport ?? undefined),
@@ -38,6 +54,14 @@ export function SearchBox({ onSelect, health, viewport, disabled = false, editin
     staleTime: 30_000,
     placeholderData: keepPreviousData,
   });
+
+  useEffect(() => {
+    onPreviewRef.current?.(null);
+  }, [search.data]);
+
+  useEffect(() => {
+    return () => onPreviewRef.current?.(null);
+  }, []);
 
   const errorMessage = search.error instanceof Error ? search.error.message : "";
   const quota = /quota|rate limit/i.test(errorMessage);
@@ -72,13 +96,25 @@ export function SearchBox({ onSelect, health, viewport, disabled = false, editin
       </div>
       <div className="search-results" aria-live="polite">
         {showResults ? search.data?.results.map((place) => (
-          <button key={place.id} type="button" disabled={disabled} onClick={() => void onSelect(place)}>
+          <button
+            key={place.id}
+            type="button"
+            disabled={disabled}
+            onMouseEnter={() => onPreview?.(place)}
+            onFocus={() => onPreview?.(place)}
+            onMouseLeave={() => onPreview?.(null)}
+            onBlur={() => onPreview?.(null)}
+            onClick={() => {
+              onPreview?.(null);
+              void onSelect(place);
+            }}
+          >
             <span className="search-result-copy">
               <strong>{place.name}</strong>
-              <span className="muted">{formatFeatureType(place.feature_type)}</span>
+              <span className="muted">{resultSubtitle(place)}</span>
             </span>
             <span className="search-result-coordinates">
-              {place.lat.toFixed(2)}, {place.lon.toFixed(2)}
+              {resultDistanceLabel(place, viewport)}
             </span>
           </button>
         )) : null}

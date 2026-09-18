@@ -10,7 +10,7 @@ from pydantic import SecretStr
 
 from rockyroad_api.factory import create_place_search, create_route_provider
 from rockyroad_api.main import create_app
-from rockyroad_api.models import Maneuver, RouteAlternative
+from rockyroad_api.models import Maneuver, PlaceResult, RouteAlternative, SearchResponse
 from rockyroad_api.ors import OpenRouteServiceClient
 from rockyroad_api.photon import PhotonSearch
 from rockyroad_api.routing import RouteComputation, RoutingError, ValhallaClient
@@ -291,6 +291,44 @@ def test_hosted_route_allows_continental_stops_and_caches(settings: Settings) ->
     assert first.json()["cache_hit"] is False
     assert first.json()["data_version"] == "ors-v1"
     assert second.json()["cache_hit"] is True
+
+
+def test_search_serializes_admin_fields(settings: Settings) -> None:
+    with TestClient(create_app(settings)) as client:
+        app = client.app
+        assert isinstance(app, FastAPI)
+
+        class FakeSearch:
+            def search(self, query: str, viewport=None) -> SearchResponse:
+                return SearchResponse(
+                    query=query,
+                    results=[
+                        PlaceResult(
+                            id="photon:N:1",
+                            name="Vancouver",
+                            feature_type="city",
+                            dataset="photon",
+                            lon=-123.12,
+                            lat=49.26,
+                            score=1.0,
+                            state="British Columbia",
+                            country="Canada",
+                            country_code="CA",
+                            place_type="city",
+                            region="British Columbia, Canada",
+                        )
+                    ],
+                )
+
+        app.state.search = FakeSearch()
+        response = client.get("/api/search", params={"q": "Vancouver"})
+    assert response.status_code == 200
+    place = response.json()["results"][0]
+    assert place["name"] == "Vancouver"
+    assert place["region"] == "British Columbia, Canada"
+    assert place["state"] == "British Columbia"
+    assert place["country_code"] == "CA"
+    assert place["place_type"] == "city"
 
 
 def test_factories_follow_provider_mode(db, settings: Settings) -> None:

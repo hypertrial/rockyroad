@@ -11,6 +11,7 @@ from rockyroad_api.db import Database
 from rockyroad_api.models import (
     Maneuver,
     RouteAlternative,
+    SavedPlaceIn,
     StopIn,
     StopOut,
     TripCreate,
@@ -21,9 +22,11 @@ from rockyroad_api.models import (
 from rockyroad_api.routing import RouteComputation, RoutingError
 from rockyroad_api.trips import (
     apply_optimized_order,
+    create_saved_place,
     create_trip,
     delete_trip,
     get_trip,
+    list_saved_places,
     list_trips,
     replace_stops,
     route_trip,
@@ -52,6 +55,22 @@ def test_apply_optimized_order_permutes_and_rejects_invalid(db: Database) -> Non
     assert [stop.id for stop in reordered] == [second.id, first.id]
     assert [stop.position for stop in reordered] == [0, 1]
     assert apply_optimized_order(trip.stops, [0, 2]) == trip.stops
+
+
+def test_apply_optimized_order_preserves_region(db: Database) -> None:
+    trip = create_trip(
+        db,
+        TripCreate(
+            name="Labeled",
+            stops=[
+                StopIn(name="Vancouver", lon=-123.12, lat=49.26, region="British Columbia, Canada"),
+                StopIn(name="Calgary", lon=-114.07, lat=51.05, region="Alberta, Canada"),
+            ],
+        ),
+    )
+    reordered = apply_optimized_order(trip.stops, [1, 0])
+    assert [stop.name for stop in reordered] == ["Calgary", "Vancouver"]
+    assert [stop.region for stop in reordered] == ["Alberta, Canada", "British Columbia, Canada"]
 
 
 def test_stop_order_is_stable(db: Database) -> None:
@@ -210,3 +229,74 @@ def test_replace_stops_rejects_id_owned_by_another_trip_before_writing(db: Datab
     current_second = get_trip(db, second.id)
     assert current_first is not None and [stop.name for stop in current_first.stops] == ["Charlottetown"]
     assert current_second is not None and [stop.name for stop in current_second.stops] == ["Summerside"]
+
+
+def test_stop_region_round_trips_and_defaults_to_null(db: Database) -> None:
+    vancouver = StopIn(
+        name="Vancouver",
+        lon=-123.12,
+        lat=49.26,
+        place_id="photon:N:1",
+        region="British Columbia, Canada",
+    )
+    created = create_trip(db, TripCreate(name="Coast", stops=[vancouver, CHARLOTTETOWN]))
+    assert created.stops[0].region == "British Columbia, Canada"
+    assert created.stops[1].region is None
+    updated = replace_stops(
+        db,
+        created.id,
+        [
+            StopIn(id=created.stops[0].id, name="Vancouver", lon=-123.12, lat=49.26, region="British Columbia, Canada"),
+            StopIn(name="Map pin", lon=-63.2, lat=46.3),
+        ],
+    )
+    assert updated is not None
+    assert updated.stops[0].region == "British Columbia, Canada"
+    assert updated.stops[1].region is None
+
+
+def test_stop_region_rejects_overlong_values() -> None:
+    with pytest.raises(ValueError):
+        StopIn(name="Vancouver", lon=-123.12, lat=49.26, region="x" * 201)
+    assert StopIn(name="Vancouver", lon=-123.12, lat=49.26, region="x" * 200).region == "x" * 200
+
+
+def test_stop_region_can_be_cleared_on_replace(db: Database) -> None:
+    created = create_trip(
+        db,
+        TripCreate(
+            name="Coast",
+            stops=[StopIn(name="Vancouver", lon=-123.12, lat=49.26, region="British Columbia, Canada")],
+        ),
+    )
+    updated = replace_stops(
+        db,
+        created.id,
+        [StopIn(id=created.stops[0].id, name="Vancouver", lon=-123.12, lat=49.26, region=None)],
+    )
+    assert updated is not None
+    assert updated.stops[0].region is None
+
+
+def test_saved_place_region_round_trips(db: Database) -> None:
+    saved = create_saved_place(
+        db,
+        SavedPlaceIn(
+            name="Vancouver",
+            lon=-123.12,
+            lat=49.26,
+            place_id="photon:N:1",
+            region="British Columbia, Canada",
+        ),
+    )
+    assert saved.region == "British Columbia, Canada"
+    listed = list_saved_places(db)
+    assert listed[0].id == saved.id
+    assert listed[0].region == "British Columbia, Canada"
+    unlabeled = create_saved_place(db, SavedPlaceIn(name="Map pin", lon=-63.13, lat=46.24))
+    assert unlabeled.region is None
+
+
+def test_saved_place_region_rejects_overlong_values() -> None:
+    with pytest.raises(ValueError):
+        SavedPlaceIn(name="Vancouver", lon=-123.12, lat=49.26, region="x" * 201)

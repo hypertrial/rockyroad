@@ -68,8 +68,8 @@ export async function mockRockyRoad(page: Page, options: MockOptions = {}) {
   const baseStops: Stop[] = options.empty
     ? []
     : [
-        { id: "stop-a", trip_id: "trip-1", position: 0, name: "Charlottetown", lon: -63.13, lat: 46.24, place_id: "p-a", created_at: now },
-        { id: "stop-b", trip_id: "trip-1", position: 1, name: "Summerside", lon: -63.79, lat: 46.39, place_id: "p-b", created_at: now },
+        { id: "stop-a", trip_id: "trip-1", position: 0, name: "Charlottetown", lon: -63.13, lat: 46.24, place_id: "p-a", created_at: now, region: "Prince Edward Island, Canada" },
+        { id: "stop-b", trip_id: "trip-1", position: 1, name: "Summerside", lon: -63.79, lat: 46.39, place_id: "p-b", created_at: now, region: null },
       ];
   const manyStops: Stop[] = options.manyStops
     ? Array.from({ length: 10 }, (_, index) => ({
@@ -81,6 +81,7 @@ export async function mockRockyRoad(page: Page, options: MockOptions = {}) {
         lat: 46.2 + index * 0.025,
         place_id: `p-extra-${index}`,
         created_at: now,
+        region: null,
       }))
     : [];
   const preparedRoute = options.longDirections
@@ -223,7 +224,14 @@ export async function mockRockyRoad(page: Page, options: MockOptions = {}) {
 
     if (pathname === "/api/trips/trip-1/stops" && method === "PUT") {
       stopReplacementRequests += 1;
-      const drafts = request.postDataJSON() as Array<{ id?: string; name: string; lon: number; lat: number; place_id: string | null }>;
+      const drafts = request.postDataJSON() as Array<{
+        id?: string;
+        name: string;
+        lon: number;
+        lat: number;
+        place_id: string | null;
+        region?: string | null;
+      }>;
       trip = {
         ...trip,
         stops: drafts.map((stop, index) => ({
@@ -232,6 +240,7 @@ export async function mockRockyRoad(page: Page, options: MockOptions = {}) {
           trip_id: trip.id,
           position: index,
           created_at: now,
+          region: stop.region ?? null,
         })),
         route: null,
       };
@@ -253,12 +262,54 @@ export async function mockRockyRoad(page: Page, options: MockOptions = {}) {
     }
 
     if (pathname === "/api/search" && method === "GET") {
-      return json(route, {
-        query: url.searchParams.get("q") ?? "",
-        results: [
-          { id: "p-c", name: "Cavendish National Park", feature_type: "national_park", dataset: "mock", lon: -63.39, lat: 46.5, score: 0.998, population: null },
-        ],
-      });
+      const query = url.searchParams.get("q") ?? "";
+      const results = query.toLowerCase().includes("vancouver")
+        ? [
+            {
+              id: "p-van-bc",
+              name: "Vancouver",
+              feature_type: "city",
+              dataset: "mock",
+              lon: -123.11,
+              lat: 49.26,
+              score: 1,
+              population: null,
+              state: "British Columbia",
+              country: "Canada",
+              country_code: "CA",
+              place_type: "city",
+              region: "British Columbia, Canada",
+            },
+            {
+              id: "p-van-wa",
+              name: "Vancouver",
+              feature_type: "city",
+              dataset: "mock",
+              lon: -122.67,
+              lat: 45.63,
+              score: 0.98,
+              population: null,
+              state: "Washington",
+              country: "United States",
+              country_code: "US",
+              place_type: "city",
+              region: "Washington, United States",
+            },
+          ]
+        : [
+            {
+              id: "p-c",
+              name: "Cavendish National Park",
+              feature_type: "national_park",
+              dataset: "mock",
+              lon: -63.39,
+              lat: 46.5,
+              score: 0.998,
+              population: null,
+              region: "Prince Edward Island, Canada",
+            },
+          ];
+      return json(route, { query, results });
     }
 
     return json(route, { detail: `Unhandled mock request: ${method} ${pathname}` }, 500);

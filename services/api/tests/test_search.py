@@ -67,6 +67,10 @@ def test_fallback_search_treats_like_metacharacters_literally(db: Database) -> N
             [place_id, name, normalized, normalized],
         )
 
-    assert [result.id for result in search_places(db, "%").results] == ["percent"]
+    percent = search_places(db, "%").results
+    assert [result.id for result in percent] == ["percent"]
+    assert percent[0].region is None
+    assert percent[0].state is None
+    assert percent[0].country is None
     assert [result.id for result in search_places(db, "_").results] == ["underscore"]
     assert [result.id for result in search_places(db, "!").results] == ["bang"]

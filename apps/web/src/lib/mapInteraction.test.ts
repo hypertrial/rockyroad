@@ -8,8 +8,8 @@ const midLon = -63.175;
 const midLat = 46.5;
 
 const twoStops = [
-  { id: "a", name: "Charlottetown", lon: -63.13, lat: 46.24, place_id: "place-a" },
-  { id: "b", name: "Summerside", lon: -63.79, lat: 46.39, place_id: "place-b" },
+  { id: "a", name: "Charlottetown", lon: -63.13, lat: 46.24, place_id: "place-a", region: "Prince Edward Island, Canada" },
+  { id: "b", name: "Summerside", lon: -63.79, lat: 46.39, place_id: "place-b", region: "Prince Edward Island, Canada" },
 ];
 
 describe("commitMapPoint", () => {
@@ -57,20 +57,27 @@ describe("commitMapPoint", () => {
 describe("withMovedStop", () => {
   it("updates one stop and clears its place id", () => {
     expect(withMovedStop(twoStops, "b", -63.5, 46.3)).toEqual([
-      { id: "a", name: "Charlottetown", lon: -63.13, lat: 46.24, place_id: "place-a" },
-      { id: "b", name: "Summerside", lon: -63.5, lat: 46.3, place_id: null },
+      { id: "a", name: "Charlottetown", lon: -63.13, lat: 46.24, place_id: "place-a", region: "Prince Edward Island, Canada" },
+      { id: "b", name: "Summerside", lon: -63.5, lat: 46.3, place_id: null, region: null },
     ]);
   });
 
   it("changes only the moved stop among several", () => {
     const stops = [
       ...twoStops,
-      { id: "c", name: "Cavendish", lon: -63.43, lat: 46.49, place_id: "place-c" },
+      { id: "c", name: "Cavendish", lon: -63.43, lat: 46.49, place_id: "place-c", region: "Prince Edward Island, Canada" },
     ];
     const moved = withMovedStop(stops, "a", -63.2, 46.3);
 
     expect(moved).toHaveLength(3);
-    expect(moved[0]).toEqual({ id: "a", name: "Charlottetown", lon: -63.2, lat: 46.3, place_id: null });
+    expect(moved[0]).toEqual({
+      id: "a",
+      name: "Charlottetown",
+      lon: -63.2,
+      lat: 46.3,
+      place_id: null,
+      region: null,
+    });
     expect(moved[1]).toEqual(stops[1]);
     expect(moved[2]).toEqual(stops[2]);
     expect(moved[1]).toBe(stops[1]);
@@ -108,8 +115,11 @@ describe("withMovedStop", () => {
       lat: 51.04,
       place_id: "place-a",
       created_at: "2026-01-01T00:00:00Z",
+      region: "Alberta, Canada",
     };
-    expect(toStopDrafts([stop])).toEqual([{ id: "a", name: "Calgary", lon: -114.07, lat: 51.04, place_id: "place-a" }]);
+    expect(toStopDrafts([stop])).toEqual([
+      { id: "a", name: "Calgary", lon: -114.07, lat: 51.04, place_id: "place-a", region: "Alberta, Canada" },
+    ]);
   });
 });
 
@@ -143,7 +153,7 @@ describe("restoreRemovedStop", () => {
     const removed = twoStops[1];
     const latest = [
       { ...twoStops[0], name: "Charlottetown waterfront" },
-      { id: "c", name: "Cavendish", lon: -63.43, lat: 46.49, place_id: "place-c" },
+      { id: "c", name: "Cavendish", lon: -63.43, lat: 46.49, place_id: "place-c", region: "Prince Edward Island, Canada" },
     ];
 
     expect(restoreRemovedStop(latest, removed, 1)).toEqual([

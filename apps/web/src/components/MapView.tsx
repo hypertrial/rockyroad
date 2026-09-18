@@ -9,7 +9,7 @@ import { coverageHint, hasExplicitCamera, initialMapCamera } from "../lib/mapCam
 import { commitMapPoint, coverageDropHint } from "../lib/mapInteraction";
 import { syncTripRouteLayer, type RouteMap } from "../lib/mapRouteLayer";
 import { mapLoadFailure, plannerMapStyle, usesLocalPmtiles } from "../lib/mapStyle";
-import type { Trip, ViewportBounds } from "../lib/types";
+import type { PlaceResult, Trip, ViewportBounds } from "../lib/types";
 import { tripRoute } from "../router";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -55,6 +55,7 @@ type Props = {
   onMoveStop: (stopId: string, lon: number, lat: number) => void;
   onSelectStop: (stopId: string) => void;
   onViewportChange: (viewport: ViewportBounds) => void;
+  previewPlace?: PlaceResult | null;
 };
 
 export function MapView({
@@ -66,6 +67,7 @@ export function MapView({
   onMoveStop,
   onSelectStop,
   onViewportChange,
+  previewPlace = null,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -86,6 +88,7 @@ export function MapView({
   const writeLockedRef = useRef(writeLocked);
   writeLockedRef.current = writeLocked;
   const draggingStopIdRef = useRef<string | null>(null);
+  const previewMarkerRef = useRef<maplibregl.Marker | null>(null);
   const fittedRouteNonceRef = useRef(0);
   const previousSelectedStopRef = useRef<string | null | undefined>(undefined);
   const suppressMapClickRef = useRef(false);
@@ -134,6 +137,15 @@ export function MapView({
       styleUrl: payload?.map_style_url ?? null,
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    const emitViewport = () => {
+      const bounds = map.getBounds();
+      viewportChangeRef.current({
+        west: bounds.getWest(),
+        south: bounds.getSouth(),
+        east: bounds.getEast(),
+        north: bounds.getNorth(),
+      });
+    };
     map.on("load", () => {
       mapFailureRef.current = null;
       setMapFailure(null);
@@ -142,6 +154,7 @@ export function MapView({
       if (!hasExplicitCamera(initialSearchRef.current) && tripRef.current.stops.length) {
         fitCoordinates(map, tripRef.current.stops.map((stop) => [stop.lon, stop.lat]));
       }
+      emitViewport();
     });
     map.on("error", (event) => {
       const error = event.error as { status?: number; message?: string } | undefined;
@@ -165,13 +178,7 @@ export function MapView({
     });
     map.on("moveend", () => {
       const center = map.getCenter();
-      const bounds = map.getBounds();
-      viewportChangeRef.current({
-        west: bounds.getWest(),
-        south: bounds.getSouth(),
-        east: bounds.getEast(),
-        north: bounds.getNorth(),
-      });
+      emitViewport();
       void navigateRef.current({
         from: tripRoute.fullPath,
         replace: true,
@@ -189,6 +196,8 @@ export function MapView({
     setMapReady(true);
     return () => {
       observer.disconnect();
+      previewMarkerRef.current?.remove();
+      previewMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
       mapFailureRef.current = null;
@@ -225,7 +234,8 @@ export function MapView({
       element.className = "trip-marker";
       element.dataset.selected = String(stop.id === selectedStopId);
       element.textContent = String(index + 1);
-      element.setAttribute("aria-label", `${index + 1}. ${stop.name}. Select or drag to move.`);
+      const markerLabel = stop.region ? `${index + 1}. ${stop.name}, ${stop.region}` : `${index + 1}. ${stop.name}`;
+      element.setAttribute("aria-label", `${markerLabel}. Select or drag to move.`);
       element.disabled = writeLocked;
       element.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -233,7 +243,7 @@ export function MapView({
       });
       const marker = new maplibregl.Marker({ element, draggable: !writeLocked })
         .setLngLat([stop.lon, stop.lat])
-        .setPopup(new maplibregl.Popup({ closeOnClick: true }).setText(`${index + 1}. ${stop.name}`))
+        .setPopup(new maplibregl.Popup({ closeOnClick: true }).setText(markerLabel))
         .addTo(map);
       marker.on("dragstart", () => {
         draggingStopIdRef.current = stop.id;
@@ -260,6 +270,27 @@ export function MapView({
       return marker;
     });
   }, [mapReady, selectedStopId, trip.stops, writeLocked]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (!previewPlace) {
+      previewMarkerRef.current?.remove();
+      previewMarkerRef.current = null;
+      return;
+    }
+    if (!previewMarkerRef.current) {
+      const element = document.createElement("div");
+      element.className = "search-preview-marker";
+      element.setAttribute("aria-hidden", "true");
+      previewMarkerRef.current = new maplibregl.Marker({ element, draggable: false })
+        .setLngLat([previewPlace.lon, previewPlace.lat])
+        .addTo(map);
+      previewMarkerRef.current.getElement().style.pointerEvents = "none";
+      return;
+    }
+    previewMarkerRef.current.setLngLat([previewPlace.lon, previewPlace.lat]);
+  }, [mapReady, previewPlace]);
 
   useEffect(() => {
     const map = mapRef.current;

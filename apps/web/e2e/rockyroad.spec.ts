@@ -155,6 +155,24 @@ test("mobile planner keeps the map mounted through search, add, collapse, and ro
   await expectNoSeriousAxeViolations(page);
 });
 
+test("search results distinguish same-name places by region", async ({ page }) => {
+  const state = await mockRockyRoad(page, { empty: true });
+  await page.goto("/trips/trip-1?panel=search");
+
+  await page.getByRole("searchbox", { name: "Search places" }).fill("Vancouver");
+  const bc = page.locator(".search-results > button", { hasText: "British Columbia, Canada" });
+  const wa = page.locator(".search-results > button", { hasText: "Washington, United States" });
+  await expect(bc).toBeVisible();
+  await expect(wa).toBeVisible();
+  await bc.click();
+
+  await page.getByRole("tab", { name: "Stops" }).click();
+  await expect(page.getByText("British Columbia, Canada")).toBeVisible();
+  expect(state.getTrip().stops[0]?.name).toBe("Vancouver");
+  expect(state.getTrip().stops[0]?.region).toBe("British Columbia, Canada");
+  await expectNoSeriousAxeViolations(page);
+});
+
 test("phone planner keeps every map control clear of the expanded sheet", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await mockRockyRoad(page);

@@ -32,7 +32,7 @@ Set `ROCKYROAD_ORS_API_KEY` from [openrouteservice.org](https://openrouteservice
 These services have no SLA. Personal use only.
 
 - OpenRouteService free plan: about 2,000 directions/day, 500 optimizations/day, 50 waypoints, 6,000 km driving routes. Alternative routes are limited to 100 km, so RockyRoad returns one hosted route. VROOM stop ordering uses the standard driving profile; the follow-up directions request applies RockyRoad avoid-toll/highway/ferry options.
-- Photon public demo: reasonable-use, no guarantee. RockyRoad identifies itself with a User-Agent, caches results, and biases toward the current map center without clipping the query to the viewport.
+- Photon public demo: reasonable-use, no guarantee. RockyRoad identifies itself with a User-Agent, caches mapped and deduped results (2 km same-name/state/country collapse), then ranks hits inside the current map bounds first. Search results include admin fields and a formatted `region` label such as `British Columbia, Canada`. Local DuckDB search leaves those fields null. Selecting a result persists `region` on the stop as display metadata; it is not part of the route cache key.
 - OpenFreeMap: donation-funded public tiles, no API key.
 
 The OpenRouteService key never leaves the API process. It is not included in `/api/health`, frontend assets, or error text.

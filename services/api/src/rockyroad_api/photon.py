@@ -9,10 +9,14 @@ import httpx
 
 from rockyroad_api.db import Database
 from rockyroad_api.models import PlaceResult, SearchResponse, Viewport
-from rockyroad_api.search import SearchError
+from rockyroad_api.search import SearchError, haversine_km
 from rockyroad_api.settings import Settings
 
 PHOTON_COUNTRIES = ("CA", "US")
+DEDUPE_RADIUS_KM = 2.0
+_NAME_MAX = 200
+_ADMIN_MAX = 80
+_REGION_MAX = 200
 
 
 def photon_cache_key(query: str, viewport: Viewport | None) -> str:
@@ -67,7 +71,7 @@ def map_photon_features(payload: dict[str, Any], *, query: str, limit: int) -> S
         osm_id = properties.get("osm_id")
         place_id = f"photon:{osm_type}:{osm_id}" if osm_id is not None else f"photon:{name}:{lon:.5f}:{lat:.5f}"
         raw_type = properties.get("osm_value") or properties.get("osm_key") or properties.get("type")
-        feature_type = str(raw_type or "place")
+        feature_type = _photon_text(raw_type) or "place"
         score = max(0.0, 1.0 - index * 0.02)
         results.append(
             PlaceResult(
@@ -79,21 +83,111 @@ def map_photon_features(payload: dict[str, Any], *, query: str, limit: int) -> S
                 lat=lat,
                 score=round(score, 6),
                 population=None,
+                city=_photon_text(properties.get("city")),
+                county=_photon_text(properties.get("county")),
+                state=_photon_text(properties.get("state")),
+                country=_photon_text(properties.get("country")),
+                country_code=_photon_text(properties.get("countrycode")),
+                place_type=_photon_text(properties.get("type")),
             )
         )
+    results = dedupe_results(results)
+    assign_regions(results)
     return SearchResponse(query=query, results=results)
 
 
+def _photon_text(value: Any, *, limit: int = _ADMIN_MAX) -> str | None:
+    if not isinstance(value, str):
+        return None
+    chars: list[str] = []
+    for character in value[: limit + 32]:
+        if not character.isprintable() or (not chars and character.isspace()):
+            continue
+        chars.append(character)
+        if len(chars) >= limit:
+            break
+    while chars and chars[-1].isspace():
+        chars.pop()
+    return "".join(chars) or None
+
+
+def format_region(result: PlaceResult, *, include_county: bool = False) -> str | None:
+    place_type = (result.place_type or "").casefold()
+    if place_type == "country":
+        return None
+    parts: list[str] = []
+    if place_type == "state":
+        if result.country:
+            parts.append(result.country)
+    else:
+        if include_county and result.county:
+            parts.append(result.county)
+        if result.state:
+            parts.append(result.state)
+        if result.country:
+            parts.append(result.country)
+    if not parts:
+        return None
+    return ", ".join(parts)[:_REGION_MAX]
+
+
+def assign_regions(results: list[PlaceResult]) -> None:
+    counts: dict[tuple[str, str], int] = {}
+    for result in results:
+        key = (result.name.casefold(), (result.state or "").casefold())
+        counts[key] = counts.get(key, 0) + 1
+    for result in results:
+        key = (result.name.casefold(), (result.state or "").casefold())
+        result.region = format_region(result, include_county=counts[key] > 1)
+
+
+def dedupe_results(results: list[PlaceResult]) -> list[PlaceResult]:
+    kept: list[PlaceResult] = []
+    for result in results:
+        if any(_is_near_duplicate(result, existing) for existing in kept):
+            continue
+        kept.append(result)
+    return kept
+
+
+def _is_near_duplicate(candidate: PlaceResult, existing: PlaceResult) -> bool:
+    if candidate.name.casefold() != existing.name.casefold():
+        return False
+    if (candidate.state or "").casefold() != (existing.state or "").casefold():
+        return False
+    if (candidate.country_code or "").casefold() != (existing.country_code or "").casefold():
+        return False
+    return haversine_km(candidate.lon, candidate.lat, existing.lon, existing.lat) <= DEDUPE_RADIUS_KM
+
+
+def rank_in_view(response: SearchResponse, viewport: Viewport | None) -> SearchResponse:
+    if viewport is None:
+        return response
+    inside = [result for result in response.results if viewport.contains(result.lon, result.lat)]
+    outside = [result for result in response.results if not viewport.contains(result.lon, result.lat)]
+    ordered = [
+        result.model_copy(update={"score": round(max(0.0, 1.0 - index * 0.02), 6)})
+        for index, result in enumerate([*inside, *outside])
+    ]
+    return SearchResponse(query=response.query, results=ordered)
+
+
 def _photon_name(properties: dict[str, Any]) -> str:
-    name = str(properties.get("name") or "").strip()
+    name = _photon_text(properties.get("name"), limit=_NAME_MAX)
     if name:
         return name
-    parts = [str(properties.get("housenumber") or ""), str(properties.get("street") or "")]
-    street = " ".join(part for part in parts if part)
-    if street.strip():
-        return street.strip()
+    street = " ".join(
+        part
+        for part in (
+            _photon_text(properties.get("housenumber"), limit=_ADMIN_MAX) or "",
+            _photon_text(properties.get("street"), limit=_ADMIN_MAX) or "",
+        )
+        if part
+    )
+    if street:
+        return street[:_NAME_MAX]
     for key in ("city", "locality", "state", "country"):
-        value = str(properties.get(key) or "").strip()
+        value = _photon_text(properties.get(key), limit=_NAME_MAX)
         if value:
             return value
     return "Unnamed place"
@@ -115,11 +209,11 @@ class PhotonSearch:
         key = photon_cache_key(cleaned, viewport)
         cached = self._load_cache(key)
         if cached is not None:
-            return cached
+            return rank_in_view(cached, viewport)
         payload = self._request(cleaned, viewport)
         result = map_photon_features(payload, query=cleaned, limit=self.settings.max_search_results)
         self._store_cache(key, cleaned, result)
-        return result
+        return rank_in_view(result, viewport)
 
     def _request(self, query: str, viewport: Viewport | None) -> dict[str, Any]:
         url = f"{self.settings.photon_url.rstrip('/')}/api"

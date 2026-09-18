@@ -68,6 +68,8 @@ def test_cache_key_changes_with_avoid_flags() -> None:
     avoided = base.model_copy(update={"avoid_tolls": True})
     assert cache_key(stops, base, "v1") != cache_key(stops, avoided, "v1")
     assert cache_key(stops, base, "v1") != cache_key(stops, base, "v2")
+    labeled = [stops[0].model_copy(update={"region": "Alberta, Canada"}), stops[1]]
+    assert cache_key(stops, base, "v1") == cache_key(labeled, base, "v1")
 
 
 def test_valhalla_payload_encodes_avoid_options() -> None:

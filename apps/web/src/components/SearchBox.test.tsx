@@ -39,14 +39,57 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const vancouverBc: PlaceResult = {
+  id: "photon:N:bc",
+  name: "Vancouver",
+  feature_type: "city",
+  dataset: "photon",
+  lon: -123.11,
+  lat: 49.26,
+  score: 1,
+  population: null,
+  state: "British Columbia",
+  country: "Canada",
+  country_code: "CA",
+  place_type: "city",
+  region: "British Columbia, Canada",
+};
+
+const vancouverWa: PlaceResult = {
+  id: "photon:N:wa",
+  name: "Vancouver",
+  feature_type: "city",
+  dataset: "photon",
+  lon: -122.67,
+  lat: 45.63,
+  score: 0.98,
+  population: null,
+  state: "Washington",
+  country: "United States",
+  country_code: "US",
+  place_type: "city",
+  region: "Washington, United States",
+};
+
+const nearVancouver: { west: number; south: number; east: number; north: number } = {
+  west: -123.2,
+  south: 49.2,
+  east: -123.0,
+  north: 49.3,
+};
+
 function renderSearch({
   health = hosted,
   onSelect = vi.fn(),
+  onPreview,
+  viewport = null,
   disabled = false,
   editingName = null,
 }: {
   health?: HealthResponse;
   onSelect?: (place: PlaceResult) => void | Promise<void>;
+  onPreview?: (place: PlaceResult | null) => void;
+  viewport?: { west: number; south: number; east: number; north: number } | null;
   disabled?: boolean;
   editingName?: string | null;
 } = {}) {
@@ -59,8 +102,9 @@ function renderSearch({
       <QueryClientProvider client={client}>
         <SearchBox
           onSelect={onSelect}
+          onPreview={onPreview}
           health={health}
-          viewport={null}
+          viewport={viewport}
           disabled={disabled}
           editingName={editingName}
         />
@@ -153,6 +197,65 @@ describe("SearchBox", () => {
     expect(await screen.findByText("No places found")).toBeInTheDocument();
     expect(search).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("distinguishes same-name results by region and shows distance when a viewport exists", async () => {
+    const user = userEvent.setup();
+    const search = vi.spyOn(api, "search").mockResolvedValue({ query: "vancouver", results: [vancouverBc, vancouverWa] });
+    renderSearch({ viewport: nearVancouver });
+
+    await user.type(screen.getByRole("searchbox"), "vancouver");
+    await screen.findByText(/British Columbia, Canada/, {}, { timeout: 1_000 });
+    expect(search).toHaveBeenCalledWith("vancouver", nearVancouver);
+    const rows = screen.getAllByRole("button").filter((button) => button.textContent?.includes("Vancouver"));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent("City · British Columbia, Canada");
+    expect(rows[1]).toHaveTextContent("City · Washington, United States");
+    expect(rows[0]).toHaveTextContent("km");
+    expect(rows[0]).not.toHaveTextContent("49.26, -123.11");
+    expect(rows[1]).not.toHaveTextContent("45.63, -122.67");
+  });
+
+  it("falls back to coordinates without a viewport and previews the focused result", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "search").mockResolvedValue({ query: "vancouver", results: [vancouverBc, vancouverWa] });
+    const onPreview = vi.fn();
+    const onSelect = vi.fn();
+    renderSearch({ onPreview, onSelect });
+
+    await user.type(screen.getByRole("searchbox"), "vancouver");
+    const bc = await screen.findByRole("button", { name: /British Columbia/ });
+    expect(bc).toHaveTextContent("49.26, -123.11");
+
+    await user.hover(bc);
+    expect(onPreview).toHaveBeenCalledWith(vancouverBc);
+    await user.unhover(bc);
+    expect(onPreview).toHaveBeenLastCalledWith(null);
+
+    bc.focus();
+    expect(onPreview).toHaveBeenCalledWith(vancouverBc);
+    await user.click(bc);
+    expect(onSelect).toHaveBeenCalledWith(vancouverBc);
+    expect(onPreview).toHaveBeenLastCalledWith(null);
+  });
+
+  it("clears a hovered preview when a new result set arrives", async () => {
+    const user = userEvent.setup();
+    const onPreview = vi.fn();
+    vi.spyOn(api, "search")
+      .mockResolvedValueOnce({ query: "vancouver", results: [vancouverBc] })
+      .mockResolvedValueOnce({ query: "banff", results: [banff] });
+    renderSearch({ onPreview });
+
+    await user.type(screen.getByRole("searchbox"), "vancouver");
+    const bc = await screen.findByRole("button", { name: /British Columbia/ }, { timeout: 1_000 });
+    await user.hover(bc);
+    expect(onPreview).toHaveBeenCalledWith(vancouverBc);
+
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(screen.getByRole("searchbox"), "banff");
+    expect(await screen.findByText("Banff National Park", {}, { timeout: 1_000 })).toBeInTheDocument();
+    expect(onPreview).toHaveBeenLastCalledWith(null);
   });
 
   it("identifies replacement mode and disables its input while persistence is pending", () => {

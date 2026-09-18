@@ -14,7 +14,7 @@ class SearchError(RuntimeError):
         self.status_code = status_code
 
 
-def _haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+def haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
     radius = 6371.0
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     d_phi = math.radians(lat2 - lat1)
@@ -40,7 +40,7 @@ def rank_rows(rows: list[dict[str, Any]], viewport: Viewport | None) -> list[dic
         bm25_norm = float(row.get("bm25") or 0.0) / max_bm25
         distance_km = 0.0
         if center is not None:
-            distance_km = _haversine_km(center[0], center[1], float(row["lon"]), float(row["lat"]))
+            distance_km = haversine_km(center[0], center[1], float(row["lon"]), float(row["lat"]))
         proximity = _proximity_score(distance_km) if center else 0.5
         score = (
             0.45 * bm25_norm

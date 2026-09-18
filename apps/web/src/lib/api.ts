@@ -89,7 +89,7 @@ export const api = {
   updateTrip: (id: string, payload: { name?: string; settings?: Partial<TripSettings> }) =>
     request<Trip>(`/api/trips/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteTrip: (id: string) => request<void>(`/api/trips/${id}`, { method: "DELETE" }),
-  replaceStops: (id: string, stops: Array<Pick<Stop, "name" | "lon" | "lat" | "place_id"> & { id?: string }>) =>
+  replaceStops: (id: string, stops: Array<Pick<Stop, "name" | "lon" | "lat" | "place_id" | "region"> & { id?: string }>) =>
     request<Trip>(`/api/trips/${id}/stops`, { method: "PUT", body: JSON.stringify(stops) }),
   routeTrip: (id: string) => request<RouteResponse>(`/api/trips/${id}/route`, { method: "POST" }),
   optimizeTrip: (id: string) => request<RouteResponse>(`/api/trips/${id}/optimize`, { method: "POST" }),

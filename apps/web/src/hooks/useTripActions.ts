@@ -36,6 +36,7 @@ function optimisticStops(trip: Trip, drafts: StopDraft[]): Stop[] {
       lon: draft.lon,
       lat: draft.lat,
       place_id: draft.place_id,
+      region: draft.region ?? null,
       created_at: current?.created_at ?? createdAt,
     };
   });
