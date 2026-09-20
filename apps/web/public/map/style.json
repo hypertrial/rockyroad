@@ -4,7 +4,8 @@
   "sources": {
     "protomaps": {
       "type": "vector",
-      "url": "pmtiles:///maps/north-america.pmtiles"
+      "url": "pmtiles:///maps/north-america.pmtiles",
+      "attribution": "© OpenStreetMap contributors"
     }
   },
   "layers": [
