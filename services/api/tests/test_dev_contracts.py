@@ -52,11 +52,10 @@ def test_make_fmt_only_invokes_installed_formatter() -> None:
     assert "|| true" not in fmt_recipe
 
 
-def test_ci_targets_the_free_repository_runner() -> None:
+def test_ci_targets_github_hosted_ubuntu() -> None:
     workflow = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
-    expected_runner = ["self-hosted", "macOS", "ARM64", "rockyroad"]
-    assert all(job["runs-on"] == expected_runner for job in jobs.values())
+    assert all(job["runs-on"] == "ubuntu-latest" for job in jobs.values())
 
     triggers = workflow.get("on", workflow.get(True))
     assert triggers == {"push": {"branches": ["main"]}, "workflow_dispatch": None}
@@ -66,17 +65,8 @@ def test_ci_targets_the_free_repository_runner() -> None:
     commands = [step["run"] for step in steps if "run" in step]
     actions = [step["uses"] for step in steps if "uses" in step]
     assert "./scripts/verify" in commands
-    assert "pnpm --filter @rockyroad/web exec playwright install chromium" in commands
-    assert all("--with-deps" not in command for command in commands)
-    browser_commands = {
-        "./scripts/verify",
-        "pnpm --filter @rockyroad/web exec playwright install chromium",
-    }
-    browser_steps = [step for step in steps if step.get("run") in browser_commands]
-    assert all(
-        step["env"]["PLAYWRIGHT_BROWSERS_PATH"] == "${{ runner.tool_cache }}/rockyroad-playwright"
-        for step in browser_steps
-    )
+    assert "pnpm --filter @rockyroad/web exec playwright install --with-deps chromium" in commands
+    assert all("self-hosted" not in str(job.get("runs-on")) for job in jobs.values())
     revisions = [action.rsplit("@", 1)[1] for action in actions]
     assert all(len(revision) == 40 and set(revision) <= set("0123456789abcdef") for revision in revisions)
     checkout = next(step for step in steps if step.get("uses", "").startswith("actions/checkout@"))
@@ -169,6 +159,7 @@ def test_compose_keeps_valhalla_on_local_profile() -> None:
     assert "ROCKYROAD_PROVIDER_MODE" in text
     assert 'profiles: ["local"]' in text
     assert "ROCKYROAD_ORS_API_KEY" in text
+    assert "127.0.0.1:8080:80" in text
     ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "./scripts/verify" in ci
     verify = (REPO_ROOT / "scripts" / "verify").read_text(encoding="utf-8")

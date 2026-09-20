@@ -1,13 +1,13 @@
 # RockyRoad project notes
 
-RockyRoad is a private Canada + USA road-trip planner monorepo. Default hosted
+RockyRoad is a Canada + USA road-trip planner monorepo. Default hosted
 mode uses OpenFreeMap tiles, OpenRouteService routing, and Photon search.
 An explicit `local` mode still runs the PEI offline stack from downloaded OSM
 artifacts.
 
 Use the `rockyroad-engineering` workspace from `.pad.toml`. Follow `AGENTS.md`
 and the local `pad-engineering` skill. Keep ticket bodies, exports, credentials,
-and local Pad state out of this private repository.
+and local Pad state out of git.
 
 ## Invariants
 

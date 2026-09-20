@@ -23,7 +23,12 @@ apps/web/test-results/
 
 # Env and editor
 .env
-.env.local
+.env.*
+!.env.example
+credentials.json
+*.pem
+*.key
+*.bak
 .DS_Store
 .idea/
 .vscode/
