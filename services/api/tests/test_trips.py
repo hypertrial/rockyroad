@@ -81,6 +81,48 @@ def test_stop_order_is_stable(db: Database) -> None:
     assert [stop.position for stop in updated.stops] == [0, 1]
 
 
+def test_replacement_and_optimization_preserve_stop_creation_times(db: Database) -> None:
+    trip = create_trip(db, TripCreate(name="History", stops=[CHARLOTTETOWN, SUMMERSIDE]))
+    db.write(lambda conn: conn.execute("UPDATE trip_stops SET created_at = TIMESTAMP '2020-01-01'"))
+    original = get_trip(db, trip.id)
+    assert original is not None
+    first, second = original.stops
+    replaced = replace_stops(
+        db,
+        trip.id,
+        [
+            StopIn(id=second.id, name="Summerside edited", lon=second.lon, lat=second.lat),
+            StopIn(id=first.id, name=first.name, lon=first.lon, lat=first.lat),
+            StopIn(name="New", lon=-63.4, lat=46.4),
+        ],
+    )
+    assert replaced is not None
+    assert [stop.position for stop in replaced.stops] == [0, 1, 2]
+    assert replaced.stops[0].created_at == second.created_at
+    assert replaced.stops[1].created_at == first.created_at
+    assert replaced.stops[2].created_at > first.created_at
+
+    alternative = RouteAlternative(
+        index=0,
+        distance_m=1000,
+        duration_s=100,
+        geometry={"type": "LineString", "coordinates": [[-63.79, 46.39], [-63.13, 46.24]]},
+        maneuvers=[Maneuver(instruction="Go", distance_m=1000, duration_s=100)],
+    )
+
+    class Provider:
+        def request_route(self, stops: list[StopOut], settings: TripSettingsOut) -> RouteComputation:
+            assert len(stops) == 3 and settings.optimize
+            return RouteComputation(alternatives=[alternative], optimized_order=[1, 0, 2])
+
+    route_trip(db, Provider(), trip.id, force_optimize=True)
+    optimized = get_trip(db, trip.id)
+    assert optimized is not None
+    assert {stop.id: stop.created_at for stop in optimized.stops} == {
+        stop.id: stop.created_at for stop in replaced.stops
+    }
+
+
 def test_rejects_overseas_coordinates(db: Database) -> None:
     try:
         create_trip(

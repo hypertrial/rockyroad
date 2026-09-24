@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import json
-from contextlib import suppress
+import logging
 from pathlib import Path
 from typing import Any
+
+import duckdb
 
 from rockyroad_api.db import Database
 from rockyroad_data.manifests import read_json
 from rockyroad_data.paths import GEO_MANIFEST, PARQUET_DATASETS
 from rockyroad_data.regions import RegionConfigError, load_regions, profile_bounds
+
+logger = logging.getLogger(__name__)
+
+
+class _FtsCreationError(RuntimeError):
+    pass
 
 
 def read_manifest(geo_dir: Path) -> dict[str, Any]:
@@ -81,6 +89,42 @@ def current_geo_version(db: Database) -> str | None:
     return str(row[0]) if row else None
 
 
+def fts_ready(conn: Any) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM duckdb_functions() "
+        "WHERE schema_name = 'fts_main_geo_features' AND function_name = 'match_bm25' LIMIT 1"
+    ).fetchone()
+    return row is not None
+
+
+def _build_fts(db: Database) -> bool:
+    def _create(conn: Any) -> None:
+        try:
+            conn.execute(
+                """
+                PRAGMA create_fts_index(
+                    'geo_features', 'id', 'name', 'search_text',
+                    stemmer='porter', stopwords='english',
+                    ignore='(\\.|[^a-z])+', strip_accents=1, lower=1, overwrite=1
+                )
+                """
+            )
+        except duckdb.Error as exc:
+            raise _FtsCreationError from exc
+
+    db.write(lambda conn: conn.execute("DROP SCHEMA IF EXISTS fts_main_geo_features CASCADE"))
+    try:
+        db.write(_create)
+    except _FtsCreationError:
+        logger.exception("Local geo FTS index creation failed; search will use the slower fallback")
+        db.write(lambda conn: conn.execute("DROP SCHEMA IF EXISTS fts_main_geo_features CASCADE"))
+        return False
+    ready = db.read(fts_ready)
+    if not ready:
+        logger.error("Local geo FTS index creation returned without a usable match_bm25 function")
+    return ready
+
+
 def import_geo_if_changed(db: Database) -> dict[str, Any]:
     geo_dir = db.settings.geo_dir
     manifest = read_manifest(geo_dir)
@@ -89,7 +133,8 @@ def import_geo_if_changed(db: Database) -> dict[str, Any]:
         return {"imported": False, "reason": "missing-manifest"}
     current = current_geo_version(db)
     if current == version:
-        return {"imported": False, "reason": "unchanged", "version": version}
+        ready = db.read(fts_ready) or _build_fts(db)
+        return {"imported": False, "reason": "unchanged", "version": version, "fts_ready": ready}
 
     missing = [name for name in PARQUET_DATASETS if not (geo_dir / f"{name}.parquet").exists()]
     if missing:
@@ -140,25 +185,9 @@ def import_geo_if_changed(db: Database) -> dict[str, Any]:
             "INSERT INTO geo_meta VALUES ('all', ?, now(), ?)",
             [version, total],
         )
-        with suppress(Exception):
+        if fts_ready(conn):
             conn.execute("PRAGMA drop_fts_index('geo_features')")
-        with suppress(Exception):
-            conn.execute(
-                """
-                PRAGMA create_fts_index(
-                    'geo_features',
-                    'id',
-                    'name',
-                    'search_text',
-                    stemmer='porter',
-                    stopwords='english',
-                    ignore='(\\.|[^a-z])+',
-                    strip_accents=1,
-                    lower=1,
-                    overwrite=1
-                )
-                """
-            )
         return {"imported": True, "version": version, "rows": total}
 
-    return db.write(_swap)
+    result = db.write(_swap)
+    return {**result, "fts_ready": _build_fts(db)}

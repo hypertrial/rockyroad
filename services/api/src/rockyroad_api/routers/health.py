@@ -7,6 +7,7 @@ from rockyroad_api.geo import (
     current_geo_version,
     extract_bounds,
     extract_profile,
+    fts_ready,
     hosted_bounds,
     import_geo_if_changed,
 )
@@ -54,7 +55,8 @@ def health(request: Request) -> HealthResponse:
         settings.routing_dir / "valhalla_tiles"
     )
     geo_ok = current_geo_version(db) is not None
-    status = "ok" if geo_ok and maps_ok and routing_ok else "degraded"
+    index_ok = db.read(fts_ready) if geo_ok else False
+    status = "ok" if geo_ok and maps_ok and routing_ok and index_ok else "degraded"
     detail = None
     if not maps_ok:
         detail = (
@@ -68,6 +70,11 @@ def health(request: Request) -> HealthResponse:
         )
     elif not geo_ok:
         detail = "Place datasets are missing. Run uv run rockyroad-data build-places."
+    if geo_ok and not index_ok:
+        detail = (detail + " " if detail else "") + (
+            "Place search index is missing. Search is using a slower fallback; "
+            "restart the API or retry /api/admin/import-geo."
+        )
     bounds = extract_bounds(settings.osm_dir)
     return HealthResponse(
         status=status,

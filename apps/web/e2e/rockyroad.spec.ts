@@ -320,6 +320,7 @@ test("desktop planner finishes a pin drag released over the side panel", async (
   expect(Math.abs(afterHover!.x - beforeHover!.x)).toBeLessThan(2);
   expect(Math.abs(afterHover!.y - beforeHover!.y)).toBeLessThan(2);
 
+  await page.waitForTimeout(350); // Let the drag-end click guard expire before a distinct map click.
   await page.mouse.click(canvasBox!.x + canvasBox!.width * 0.82, canvasBox!.y + canvasBox!.height * 0.28);
   await expect.poll(() => state.getTrip().stops).toHaveLength(3);
   await expect.poll(() => state.getStopReplacementRequestCount()).toBe(2);

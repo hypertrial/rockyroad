@@ -1,19 +1,24 @@
 from __future__ import annotations
 
+import json
 import math
 import time
 from pathlib import Path
 
+import polars as pl
 import pytest
 
+from rockyroad_data.paths import PARQUET_DATASETS
 from rockyroad_data.places import (
     OSMIUM_IMAGE,
+    SCHEMA,
     build_places,
     centroid,
     dataset_for,
     feature_type,
     normalize_name,
     rows_from_export,
+    write_streamed_datasets,
 )
 from rockyroad_data.process import ToolError
 
@@ -97,6 +102,57 @@ def test_rows_from_export_uses_feature_id_and_dedupes(tmp_path: Path) -> None:
     )
     buckets = rows_from_export(export, {"suburb": 0.4, "hamlet": 0.2, "other": 0.2})
     assert [row["id"] for row in buckets["places"]] == ["node/1", "places:keppoch:-63.108000:46.202000"]
+
+
+def test_streamed_place_build_matches_reference_across_batches(tmp_path: Path) -> None:
+    export = tmp_path / "features.geojsonseq"
+    priors = {"city": 0.9, "town": 0.6, "park": 0.5, "other": 0.2}
+
+    def feature(index: int, kind: str = "city", osm_id: str | None = None) -> str:
+        props = {"name": f"Place {index}", "place": kind}
+        return json.dumps(
+            {
+                "type": "Feature",
+                "id": osm_id or f"node/{index}",
+                "properties": props,
+                "geometry": {"type": "Point", "coordinates": [-63.0, 46.0]},
+            }
+        )
+
+    with export.open("w", encoding="utf-8") as handle:
+        handle.write(feature(0, "town", "shared") + "\n")
+        handle.write(feature(1, "city", "tie") + "\n")
+        for index in range(2, 10_002):
+            handle.write(feature(index) + "\n")
+        handle.write(feature(10_002, "city", "shared") + "\n")
+        handle.write(feature(10_003, "city", "tie") + "\n")
+        handle.write(json.dumps({"type": "Feature", "properties": {"name": "bad"}, "geometry": None}) + "\n")
+        handle.write(feature(10_004, "park") + "\n")
+    reference = rows_from_export(export, priors)
+    written, counts = write_streamed_datasets(export, priors, tmp_path)
+    for dataset in PARQUET_DATASETS:
+        frame = pl.read_parquet(written[dataset])
+        assert frame.schema == SCHEMA
+        assert frame.to_dicts() == pl.DataFrame(reference[dataset], schema=SCHEMA).to_dicts()
+        assert counts[dataset] == len(reference[dataset])
+    assert not list(tmp_path.glob(".places-build-*"))
+
+
+def test_streamed_place_build_cleans_staging_after_parse_failure(tmp_path: Path) -> None:
+    export = tmp_path / "features.geojsonseq"
+    with export.open("w", encoding="utf-8") as handle:
+        row = (
+            '{"type":"Feature","id":"node/1","properties":{"name":"Town","place":"city"},'
+            '"geometry":{"type":"Point","coordinates":[-63,46]}}\n'
+        )
+        handle.write(row * 10_000)
+        handle.write("{malformed json}\n")
+    prior = tmp_path / "places.parquet"
+    prior.write_bytes(b"old artifact")
+    with pytest.raises(json.JSONDecodeError):
+        write_streamed_datasets(export, {"city": 1.0}, tmp_path)
+    assert prior.read_bytes() == b"old artifact"
+    assert not list(tmp_path.glob(".places-build-*"))
 
 
 def test_build_places_uses_docker_when_osmium_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

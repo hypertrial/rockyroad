@@ -65,6 +65,7 @@ These are order-of-magnitude numbers; hardware and Geofabrik freshness change th
 | canada-usa | ~10–15 GB | 20–40 GB | 40–80 GB | 1–3 GB | 32–64 GB | many hours |
 
 Keep generated PBF, PMTiles, graphs, Parquet, and DuckDB files out of Git.
+The optional place build writes 10,000-row Parquet chunks and DuckDB spill files under `data/geo` (or the selected output directory). Allow temporary disk space beyond the final Parquet size; the build removes these files on success or failure. The DuckDB deduplication step has a 512 MB memory limit. Full-region peak memory and elapsed time have not been measured.
 
 ## Host tools
 
@@ -78,7 +79,7 @@ Planetiler is also available as `infra/map/Dockerfile` if you prefer a container
 
 Each command writes a versioned `manifest.json` next to its artifacts and replaces files atomically (`*.tmp` then rename).
 
-The API imports Parquet on local-mode startup and through `POST /api/admin/import-geo`. Import swaps into a staging table, rebuilds the FTS index, then replaces `geo_features`. If the new manifest is incomplete, the previous searchable dataset stays in place.
+The API imports Parquet on local-mode startup and through `POST /api/admin/import-geo`. An ordinary import failure rolls back to the previous dataset. If only FTS index creation fails, imported places stay available through slower fallback search; local health reports `degraded` with the cause and the import response includes `fts_ready: false`. Startup or another admin import retries indexing for the same data version without rereading Parquet. Once indexing succeeds, health returns to normal when the other local artifacts are ready.
 
 To roll back a local build, restore the previous `data/geo`, `data/maps`, or `data/routing/valhalla` directory and restart the API. Route geometry cache keys include the routing data version (`ors-v1` when hosted, the Valhalla manifest when local), so old legs are recomputed automatically.
 
