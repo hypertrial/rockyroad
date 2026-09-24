@@ -371,16 +371,19 @@ def _replace_stops(conn: Any, trip_id: UUID, stops: list[StopIn]) -> None:
     stop_ids = [stop.id for stop in stops if stop.id is not None]
     if len(stop_ids) != len(set(stop_ids)):
         raise ValueError("stop ids must be unique")
+    created_at_by_id: dict[UUID, Any] = {}
     for stop_id in stop_ids:
-        owner = conn.execute("SELECT trip_id FROM trip_stops WHERE id = ?", [str(stop_id)]).fetchone()
+        owner = conn.execute("SELECT trip_id, created_at FROM trip_stops WHERE id = ?", [str(stop_id)]).fetchone()
         if owner is not None and str(owner[0]) != str(trip_id):
             raise ValueError("stop id belongs to another trip")
+        if owner is not None:
+            created_at_by_id[stop_id] = owner[1]
     conn.execute("DELETE FROM trip_stops WHERE trip_id = ?", [str(trip_id)])
     for index, stop in enumerate(stops):
         conn.execute(
             """
             INSERT INTO trip_stops (id, trip_id, position, name, lon, lat, place_id, region, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, now())
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?::TIMESTAMP, now()))
             """,
             [
                 str(stop.id or uuid.uuid4()),
@@ -391,6 +394,7 @@ def _replace_stops(conn: Any, trip_id: UUID, stops: list[StopIn]) -> None:
                 stop.lat,
                 stop.place_id,
                 stop.region,
+                created_at_by_id.get(stop.id) if stop.id is not None else None,
             ],
         )
 

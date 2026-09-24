@@ -7,8 +7,10 @@ import os
 import shutil
 from collections.abc import Iterator
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
+import duckdb
 import polars as pl
 
 from rockyroad_data.manifests import (
@@ -194,6 +196,12 @@ def iter_geojsonseq(path: Path) -> Iterator[dict[str, Any]]:
 
 def rows_from_export(export_path: Path, priors: dict[str, float]) -> dict[str, list[dict[str, Any]]]:
     buckets: dict[str, list[dict[str, Any]]] = {name: [] for name in PARQUET_DATASETS}
+    for dataset, row in iter_export_rows(export_path, priors):
+        buckets[dataset].append(row)
+    return {name: dedupe_rows(items) for name, items in buckets.items()}
+
+
+def iter_export_rows(export_path: Path, priors: dict[str, float]) -> Iterator[tuple[str, dict[str, Any]]]:
     for feature in iter_geojsonseq(export_path):
         props = feature.get("properties") or {}
         if not isinstance(props, dict):
@@ -219,7 +227,8 @@ def rows_from_export(export_path: Path, priors: dict[str, float]) -> dict[str, l
             or props.get("id")
             or f"{dataset}:{normalize_name(str(name))}:{lon:.6f}:{lat:.6f}"
         )
-        buckets[dataset].append(
+        yield (
+            dataset,
             {
                 "id": osm_id,
                 "name": str(name),
@@ -233,9 +242,8 @@ def rows_from_export(export_path: Path, priors: dict[str, float]) -> dict[str, l
                 "importance": importance_for(kind, priors, population_score),
                 "type_prior": float(priors.get(kind, priors.get("other", 0.2))),
                 "admin_level": props.get("admin_level"),
-            }
+            },
         )
-    return {name: dedupe_rows(items) for name, items in buckets.items()}
 
 
 def _as_int(raw: Any) -> int | None:
@@ -273,6 +281,70 @@ def write_parquet_datasets(buckets: dict[str, list[dict[str, Any]]], output_dir:
     return written
 
 
+def build_parquet_datasets(export_path: Path, priors: dict[str, float], output_dir: Path) -> dict[str, int]:
+    """Stage bounded row batches, then select deterministic winners with spillable DuckDB."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix=".places-build-", dir=output_dir) as temporary:
+        stage = Path(temporary)
+        chunks = {name: [] for name in PARQUET_DATASETS}
+        batches: dict[str, list[dict[str, Any]]] = {name: [] for name in PARQUET_DATASETS}
+        sequence = {name: 0 for name in PARQUET_DATASETS}
+
+        def flush(name: str) -> None:
+            if not batches[name]:
+                return
+            path = stage / f"{name}-{len(chunks[name]):05d}.parquet"
+            pl.DataFrame(batches[name], schema={**SCHEMA, "_sequence": pl.Int64}).write_parquet(path)
+            chunks[name].append(path)
+            batches[name] = []
+
+        for name, row in iter_export_rows(export_path, priors):
+            batches[name].append({**row, "_sequence": sequence[name]})
+            sequence[name] += 1
+            if len(batches[name]) == 10_000:
+                flush(name)
+        for name in PARQUET_DATASETS:
+            flush(name)
+
+        connection = duckdb.connect(
+            ":memory:", config={"memory_limit": "512MB", "temp_directory": str(stage / "spill")}
+        )
+        counts: dict[str, int] = {}
+        try:
+            columns = ", ".join(f'"{column}"' for column in SCHEMA)
+            for name in PARQUET_DATASETS:
+                staged = stage / f"{name}.parquet"
+                if chunks[name]:
+                    target = str(staged).replace("'", "''")
+                    connection.execute(
+                        f"""
+                        COPY (
+                            SELECT {columns} FROM (
+                                SELECT *,
+                                    MIN(_sequence) OVER (PARTITION BY id) AS _first,
+                                    ROW_NUMBER() OVER (
+                                        PARTITION BY id ORDER BY importance DESC, _sequence ASC
+                                    ) AS _winner
+                                FROM read_parquet(?)
+                            ) WHERE _winner = 1 ORDER BY _first
+                        ) TO '{target}' (FORMAT PARQUET)
+                        """,
+                        [[str(path) for path in chunks[name]]],
+                    )
+                else:
+                    pl.DataFrame([], schema=SCHEMA).write_parquet(staged)
+                frame = pl.scan_parquet(staged)
+                if frame.collect_schema() != pl.Schema(SCHEMA):
+                    raise ValueError(f"Unexpected schema in staged {name} dataset")
+                counts[name] = int(frame.select(pl.len()).collect().item())
+        finally:
+            connection.close()
+
+        for name in PARQUET_DATASETS:
+            (stage / f"{name}.parquet").replace(output_dir / f"{name}.parquet")
+        return counts
+
+
 def _osmium_args(osmium: str, filtered: Path, export_path: Path, source: Path) -> tuple[list[str], list[str]]:
     return (
         [osmium, "tags-filter", str(source), *OSMIUM_FILTERS, "-o", str(filtered)],
@@ -299,9 +371,11 @@ def _export_filtered_host(pbf: Path, export_path: Path) -> None:
     if export_path.exists():
         export_path.unlink()
     filter_args, export_args = _osmium_args(osmium, filtered, export_path, pbf)
-    run_command(filter_args)
-    run_command(export_args)
-    filtered.unlink(missing_ok=True)
+    try:
+        run_command(filter_args)
+        run_command(export_args)
+    finally:
+        filtered.unlink(missing_ok=True)
 
 
 def _export_filtered_docker(pbf: Path, export_path: Path) -> None:
@@ -381,21 +455,21 @@ def build_places(pbf: Path | None = None, output_dir: Path | None = None) -> dic
     config = load_regions()
     priors = {str(key): float(value) for key, value in (config.get("feature_priors") or {}).items()}
     export_path = dest / "features.geojsonseq"
-    export_filtered_features(source, export_path)
-    buckets = rows_from_export(export_path, priors)
-    written = write_parquet_datasets(buckets, dest)
-    export_path.unlink(missing_ok=True)
+    try:
+        export_filtered_features(source, export_path)
+        counts = build_parquet_datasets(export_path, priors, dest)
+    finally:
+        export_path.unlink(missing_ok=True)
+    written = {name: dest / f"{name}.parquet" for name in PARQUET_DATASETS}
     osm_manifest = read_json(OSM_MANIFEST)
     manifest = {
         "created_at": utc_now(),
         "source_pbf": artifact_record(source),
         "osm_version": osm_manifest.get("version"),
-        "datasets": {name: artifact_record(path, {"rows": len(buckets[name])}) for name, path in written.items()},
+        "datasets": {name: artifact_record(path, {"rows": counts[name]}) for name, path in written.items()},
         "version": hashlib.sha256(
             "".join(file_sha256(written[name]) for name in PARQUET_DATASETS).encode("utf-8")
         ).hexdigest()[:16],
     }
-    for name in PARQUET_DATASETS:
-        manifest["datasets"][name]["rows"] = len(buckets[name])
     write_json_atomic(dest / "manifest.json", manifest)
     return manifest

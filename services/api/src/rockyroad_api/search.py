@@ -5,6 +5,7 @@ import uuid
 from typing import Any
 
 from rockyroad_api.db import Database
+from rockyroad_api.geo import fts_index_exists
 from rockyroad_api.models import PlaceResult, RecentSearchOut, SearchResponse, Viewport
 
 
@@ -67,9 +68,10 @@ def search_places(
     params: list[Any] = [cleaned, max_results * 5]
 
     def _query(conn: Any) -> list[Any]:
-        try:
+        if fts_index_exists(conn):
             return conn.execute(
                 """
+                SELECT * FROM (
                 SELECT
                     id,
                     dataset,
@@ -83,17 +85,17 @@ def search_places(
                     type_prior,
                     fts_main_geo_features.match_bm25(id, ?) AS bm25
                 FROM geo_features
-                QUALIFY bm25 IS NOT NULL
+                ) AS matches
+                WHERE bm25 IS NOT NULL
                 ORDER BY bm25 DESC
                 LIMIT ?
                 """,
                 params,
             ).fetchall()
-        except Exception:
-            escaped = cleaned.casefold().replace("!", "!!").replace("%", "!%").replace("_", "!_")
-            like = f"%{escaped}%"
-            return conn.execute(
-                """
+        escaped = cleaned.casefold().replace("!", "!!").replace("%", "!%").replace("_", "!_")
+        like = f"%{escaped}%"
+        return conn.execute(
+            """
                 SELECT
                     id,
                     dataset,
@@ -110,8 +112,8 @@ def search_places(
                 WHERE (normalized_name LIKE ? ESCAPE '!' OR search_text LIKE ? ESCAPE '!')
                 LIMIT ?
                 """,
-                [like, like, max_results * 5],
-            ).fetchall()
+            [like, like, max_results * 5],
+        ).fetchall()
 
     rows = db.read(_query)
 

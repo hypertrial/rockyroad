@@ -7,6 +7,7 @@ from rockyroad_api.geo import (
     current_geo_version,
     extract_bounds,
     extract_profile,
+    fts_index_exists,
     hosted_bounds,
     import_geo_if_changed,
 )
@@ -53,8 +54,10 @@ def health(request: Request) -> HealthResponse:
     routing_ok = artifact_ready(settings.routing_dir / "valhalla_tiles.tar") or artifact_ready(
         settings.routing_dir / "valhalla_tiles"
     )
-    geo_ok = current_geo_version(db) is not None
-    status = "ok" if geo_ok and maps_ok and routing_ok else "degraded"
+    version = current_geo_version(db)
+    geo_ok = version is not None
+    fts_ok = db.read(fts_index_exists) if geo_ok else False
+    status = "ok" if geo_ok and fts_ok and maps_ok and routing_ok else "degraded"
     detail = None
     if not maps_ok:
         detail = (
@@ -68,6 +71,12 @@ def health(request: Request) -> HealthResponse:
         )
     elif not geo_ok:
         detail = "Place datasets are missing. Run uv run rockyroad-data build-places."
+    if geo_ok and not fts_ok:
+        warning = (
+            "Local search index is unavailable; search is using a slower fallback. "
+            "Retry the place import to rebuild it."
+        )
+        detail = f"{detail} {warning}" if detail else warning
     bounds = extract_bounds(settings.osm_dir)
     return HealthResponse(
         status=status,
@@ -75,7 +84,7 @@ def health(request: Request) -> HealthResponse:
         geo=geo_ok,
         routing=routing_ok,
         maps=maps_ok,
-        data_version=current_geo_version(db),
+        data_version=version,
         detail=detail,
         bounds=bounds,
         profile=extract_profile(settings.osm_dir),

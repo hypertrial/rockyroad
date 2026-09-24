@@ -81,6 +81,53 @@ def test_stop_order_is_stable(db: Database) -> None:
     assert [stop.position for stop in updated.stops] == [0, 1]
 
 
+def test_replace_stops_preserves_existing_creation_times(db: Database) -> None:
+    created = create_trip(db, TripCreate(name="Timestamps", stops=[CHARLOTTETOWN, SUMMERSIDE]))
+    first, second = created.stops
+    updated = replace_stops(
+        db,
+        created.id,
+        [
+            StopIn(id=second.id, name="Renamed", lon=-63.8, lat=46.4),
+            StopIn(id=first.id, name=first.name, lon=first.lon, lat=first.lat),
+            StopIn(id=uuid4(), name="New", lon=-63.3, lat=46.3),
+        ],
+    )
+    assert updated is not None
+    assert [(stop.id, stop.created_at) for stop in updated.stops[:2]] == [
+        (second.id, second.created_at),
+        (first.id, first.created_at),
+    ]
+    assert updated.stops[2].created_at >= max(first.created_at, second.created_at)
+
+
+def test_optimized_route_preserves_stop_creation_times(db: Database) -> None:
+    created = create_trip(db, TripCreate(name="Optimized", stops=[CHARLOTTETOWN, SUMMERSIDE]))
+    original_times = {stop.id: stop.created_at for stop in created.stops}
+
+    class ReorderingProvider:
+        def request_route(self, stops: list[StopOut], settings: TripSettingsOut) -> RouteComputation:
+            del stops, settings
+            return RouteComputation(
+                alternatives=[
+                    RouteAlternative(
+                        index=0,
+                        distance_m=1000,
+                        duration_s=100,
+                        geometry={"type": "LineString", "coordinates": [[-63.13, 46.24], [-63.79, 46.39]]},
+                        maneuvers=[],
+                    )
+                ],
+                optimized_order=[1, 0],
+            )
+
+    route_trip(db, ReorderingProvider(), created.id, force_optimize=True)
+    updated = get_trip(db, created.id)
+    assert updated is not None
+    assert [stop.id for stop in updated.stops] == [created.stops[1].id, created.stops[0].id]
+    assert {stop.id: stop.created_at for stop in updated.stops} == original_times
+
+
 def test_rejects_overseas_coordinates(db: Database) -> None:
     try:
         create_trip(

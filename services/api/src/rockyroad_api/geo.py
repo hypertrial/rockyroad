@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
-from contextlib import suppress
+import logging
 from pathlib import Path
 from typing import Any
+
+import duckdb
 
 from rockyroad_api.db import Database
 from rockyroad_data.manifests import read_json
 from rockyroad_data.paths import GEO_MANIFEST, PARQUET_DATASETS
 from rockyroad_data.regions import RegionConfigError, load_regions, profile_bounds
+
+logger = logging.getLogger(__name__)
 
 
 def read_manifest(geo_dir: Path) -> dict[str, Any]:
@@ -81,6 +85,46 @@ def current_geo_version(db: Database) -> str | None:
     return str(row[0]) if row else None
 
 
+def fts_index_exists(conn: Any) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM duckdb_functions() WHERE schema_name = 'fts_main_geo_features' "
+            "AND function_name = 'match_bm25' LIMIT 1"
+        ).fetchone()
+    )
+
+
+def _create_fts_index(conn: Any) -> None:
+    conn.execute(
+        """
+        PRAGMA create_fts_index(
+            'geo_features', 'id', 'name', 'search_text',
+            stemmer='porter', stopwords='english', ignore='(\\.|[^a-z])+',
+            strip_accents=1, lower=1, overwrite=1
+        )
+        """
+    )
+
+
+def _drop_fts_index(conn: Any) -> None:
+    conn.execute("PRAGMA drop_fts_index('geo_features')")
+
+
+def _rebuild_fts(conn: Any) -> bool:
+    if fts_index_exists(conn):
+        _drop_fts_index(conn)
+    try:
+        _create_fts_index(conn)
+        return True
+    except duckdb.Error as exc:
+        logger.exception("Local search index creation failed; using slower fallback search")
+        # A failed PRAGMA may leave tables without the match_bm25 macro.
+        conn.execute("DROP SCHEMA IF EXISTS fts_main_geo_features CASCADE")
+        if fts_index_exists(conn):
+            raise RuntimeError("Partial local search index could not be removed") from exc
+        return False
+
+
 def import_geo_if_changed(db: Database) -> dict[str, Any]:
     geo_dir = db.settings.geo_dir
     manifest = read_manifest(geo_dir)
@@ -89,13 +133,24 @@ def import_geo_if_changed(db: Database) -> dict[str, Any]:
         return {"imported": False, "reason": "missing-manifest"}
     current = current_geo_version(db)
     if current == version:
-        return {"imported": False, "reason": "unchanged", "version": version}
+        if db.read(fts_index_exists):
+            return {"imported": False, "reason": "unchanged", "version": version, "fts_ready": True}
+        ready = db.read(_rebuild_fts)
+        return {
+            "imported": False,
+            "reason": "index-rebuilt" if ready else "index-unavailable",
+            "version": version,
+            "fts_ready": ready,
+        }
 
     missing = [name for name in PARQUET_DATASETS if not (geo_dir / f"{name}.parquet").exists()]
     if missing:
         return {"imported": False, "reason": "missing-parquet", "missing": missing}
 
     def _swap(conn: Any) -> dict[str, Any]:
+        # A failure to inspect or remove the old index must roll back the data swap.
+        if fts_index_exists(conn):
+            _drop_fts_index(conn)
         conn.execute("DROP TABLE IF EXISTS geo_features_staging")
         conn.execute(
             """
@@ -140,25 +195,10 @@ def import_geo_if_changed(db: Database) -> dict[str, Any]:
             "INSERT INTO geo_meta VALUES ('all', ?, now(), ?)",
             [version, total],
         )
-        with suppress(Exception):
-            conn.execute("PRAGMA drop_fts_index('geo_features')")
-        with suppress(Exception):
-            conn.execute(
-                """
-                PRAGMA create_fts_index(
-                    'geo_features',
-                    'id',
-                    'name',
-                    'search_text',
-                    stemmer='porter',
-                    stopwords='english',
-                    ignore='(\\.|[^a-z])+',
-                    strip_accents=1,
-                    lower=1,
-                    overwrite=1
-                )
-                """
-            )
         return {"imported": True, "version": version, "rows": total}
 
-    return db.write(_swap)
+    # Hold the API connection lock across both stages so searches never observe stale FTS.
+    with db._lock:
+        result = db.write(_swap)
+        result["fts_ready"] = db.read(_rebuild_fts)
+        return result

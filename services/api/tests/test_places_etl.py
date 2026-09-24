@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import json
 import math
 import time
 from pathlib import Path
 
+import polars as pl
 import pytest
 
+from rockyroad_data.paths import PARQUET_DATASETS
 from rockyroad_data.places import (
     OSMIUM_IMAGE,
+    SCHEMA,
+    build_parquet_datasets,
     build_places,
     centroid,
     dataset_for,
@@ -97,6 +102,93 @@ def test_rows_from_export_uses_feature_id_and_dedupes(tmp_path: Path) -> None:
     )
     buckets = rows_from_export(export, {"suburb": 0.4, "hamlet": 0.2, "other": 0.2})
     assert [row["id"] for row in buckets["places"]] == ["node/1", "places:keppoch:-63.108000:46.202000"]
+
+
+def test_staged_build_matches_reference_across_batch_boundary(tmp_path: Path) -> None:
+    export = tmp_path / "features.geojsonseq"
+    with export.open("w", encoding="utf-8") as handle:
+        for index in range(10_001):
+            feature = {
+                "type": "Feature",
+                "id": f"node/{index}",
+                "properties": {"name": f"Place {index}", "place": "city"},
+                "geometry": {"type": "Point", "coordinates": [-63.0, 46.0]},
+            }
+            handle.write(json.dumps(feature) + "\n")
+        for name, kind in [("Place 0 updated", "town"), ("Place 1 tie", "city")]:
+            duplicate = {
+                "type": "Feature",
+                "id": "node/0" if kind == "town" else "node/1",
+                "properties": {"name": name, "place": kind},
+                "geometry": {"type": "Point", "coordinates": [-63.0, 46.0]},
+            }
+            handle.write(json.dumps(duplicate) + "\n")
+    priors = {"city": 0.5, "town": 0.9, "other": 0.2}
+    expected = rows_from_export(export, priors)
+    output = tmp_path / "output"
+    counts = build_parquet_datasets(export, priors, output)
+    for name in PARQUET_DATASETS:
+        frame = pl.read_parquet(output / f"{name}.parquet")
+        assert frame.schema == SCHEMA
+        assert frame.to_dicts() == pl.DataFrame(expected[name], schema=SCHEMA).to_dicts()
+        assert counts[name] == len(expected[name])
+    assert not list(output.glob(".places-build-*"))
+
+
+def test_staged_build_cleans_up_after_malformed_input(tmp_path: Path) -> None:
+    export = tmp_path / "features.geojsonseq"
+    feature = {
+        "type": "Feature",
+        "id": "node/1",
+        "properties": {"name": "Town", "place": "city"},
+        "geometry": {"type": "Point", "coordinates": [-63.0, 46.0]},
+    }
+    with export.open("w", encoding="utf-8") as handle:
+        for _ in range(10_000):
+            handle.write(json.dumps(feature) + "\n")
+        handle.write("{invalid json}\n")
+    output = tmp_path / "output"
+    output.mkdir()
+    previous = output / "places.parquet"
+    previous.write_bytes(b"previous")
+    with pytest.raises(json.JSONDecodeError):
+        build_parquet_datasets(export, {}, output)
+    assert previous.read_bytes() == b"previous"
+    assert not list(output.glob(".places-build-*"))
+
+
+def test_failed_host_export_removes_partial_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from rockyroad_data.places import _export_filtered_host
+
+    export = tmp_path / "features.geojsonseq"
+    filtered = export.with_suffix(".filtered.osm.pbf")
+
+    def fail_export(_args: list[str]) -> None:
+        filtered.write_bytes(b"partial")
+        export.write_bytes(b"partial")
+        raise ToolError("osmium failed")
+
+    monkeypatch.setattr("rockyroad_data.places.require_executable", lambda _name: "osmium")
+    monkeypatch.setattr("rockyroad_data.places.run_command", fail_export)
+    with pytest.raises(ToolError):
+        _export_filtered_host(tmp_path / "source.pbf", export)
+    assert not filtered.exists()
+
+
+def test_build_places_removes_partial_export_on_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "source.pbf"
+    source.write_bytes(b"pbf")
+    output = tmp_path / "geo"
+
+    def fail_export(_source: Path, export: Path) -> None:
+        export.write_bytes(b"partial")
+        raise ToolError("osmium failed")
+
+    monkeypatch.setattr("rockyroad_data.places.ensure_data_dirs", lambda: None)
+    monkeypatch.setattr("rockyroad_data.places.export_filtered_features", fail_export)
+    with pytest.raises(ToolError):
+        build_places(pbf=source, output_dir=output)
+    assert not (output / "features.geojsonseq").exists()
 
 
 def test_build_places_uses_docker_when_osmium_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

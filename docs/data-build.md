@@ -14,7 +14,7 @@ local:
   OSM PBF
   ├─→ Planetiler → data/maps/north-america.pmtiles
   ├─→ Valhalla → data/routing/valhalla/
-  └─→ Osmium + Polars → data/geo/*.parquet → DuckDB (API-owned)
+  └─→ Osmium + Polars + DuckDB → data/geo/*.parquet → DuckDB (API-owned)
 ```
 
 ## Hosted providers
@@ -65,6 +65,7 @@ These are order-of-magnitude numbers; hardware and Geofabrik freshness change th
 | canada-usa | ~10–15 GB | 20–40 GB | 40–80 GB | 1–3 GB | 32–64 GB | many hours |
 
 Keep generated PBF, PMTiles, graphs, Parquet, and DuckDB files out of Git.
+The optional `canada-usa` place build writes temporary Parquet batches and DuckDB spill files under `data/geo/` while it runs. Allow extra free disk space beyond the final Parquet size; the temporary files are removed on success or failure. Its deduplication connection is limited to 512 MB of DuckDB memory, though Osmium and Python also use memory.
 
 ## Host tools
 
@@ -78,7 +79,7 @@ Planetiler is also available as `infra/map/Dockerfile` if you prefer a container
 
 Each command writes a versioned `manifest.json` next to its artifacts and replaces files atomically (`*.tmp` then rename).
 
-The API imports Parquet on local-mode startup and through `POST /api/admin/import-geo`. Import swaps into a staging table, rebuilds the FTS index, then replaces `geo_features`. If the new manifest is incomplete, the previous searchable dataset stays in place.
+The API imports Parquet on local-mode startup and through `POST /api/admin/import-geo`. Import swaps into a staging table, then rebuilds the FTS index. If the new manifest is incomplete, the previous searchable dataset stays in place. If only index creation fails, the new data remains available through slower fallback search. `/api/health` reports `degraded` with an explanation in the app header, while `geo` remains `true`. The import response includes `fts_ready`; startup and later admin imports retry a missing index for the same data version without rereading Parquet.
 
 To roll back a local build, restore the previous `data/geo`, `data/maps`, or `data/routing/valhalla` directory and restart the API. Route geometry cache keys include the routing data version (`ors-v1` when hosted, the Valhalla manifest when local), so old legs are recomputed automatically.
 
@@ -145,4 +146,5 @@ Keep OSM attribution visible. Produced tiles, graphs, and Parquet inherit ODbL s
 | Local route 503 | Valhalla graph missing or service down | `build-routing`, then `docker compose --profile local up -d valhalla`. If the repo path has a space, set `ROCKYROAD_VALHALLA_FILES` |
 | Local route 422 / no roads near stops | Pins are outside the downloaded extract (`sample` is PEI-only) | Drop stops inside `/api/health` `bounds`, switch to hosted mode, or rebuild with `update-osm --profile canada-usa` |
 | Empty local search | Parquet not imported | `uv run rockyroad-data build-places` (host osmium or Docker), then restart the API or `POST /api/admin/import-geo` |
+| Local health says search index unavailable | DuckDB FTS index build failed | Search remains available through a slower fallback. Inspect API logs, then restart or `POST /api/admin/import-geo` to retry without rebuilding places. |
 | DuckDB extension download | Image was built without `INSTALL spatial/fts` | Rebuild `infra/api/Dockerfile` |
