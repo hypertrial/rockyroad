@@ -4,6 +4,7 @@ import json
 import math
 import time
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
@@ -17,10 +18,20 @@ from rockyroad_data.places import (
     centroid,
     dataset_for,
     feature_type,
+    iter_export_rows,
     normalize_name,
-    rows_from_export,
 )
 from rockyroad_data.process import ToolError
+
+
+def _reference_rows(export: Path, priors: dict[str, float]) -> dict[str, list[dict[str, Any]]]:
+    """The former first-seen-order, highest-importance bucket selection."""
+    best: dict[str, dict[str, dict[str, Any]]] = {name: {} for name in PARQUET_DATASETS}
+    for dataset, row in iter_export_rows(export, priors):
+        previous = best[dataset].get(row["id"])
+        if previous is None or float(row["importance"]) > float(previous["importance"]):
+            best[dataset][row["id"]] = row
+    return {name: list(rows.values()) for name, rows in best.items()}
 
 
 def test_feature_classification() -> None:
@@ -84,12 +95,12 @@ def test_rows_from_geojsonseq(tmp_path) -> None:
         '{"type":"Feature","properties":{"name":"Charlottetown","place":"city","population":"38000","@id":"node/1"},"geometry":{"type":"Point","coordinates":[-63.13,46.24]}}\n',
         encoding="utf-8",
     )
-    buckets = rows_from_export(export, {"city": 1.0, "other": 0.2})
+    buckets = _reference_rows(export, {"city": 1.0, "other": 0.2})
     assert buckets["places"][0]["name"] == "Charlottetown"
     assert buckets["places"][0]["importance"] > 0.5
 
 
-def test_rows_from_export_uses_feature_id_and_dedupes(tmp_path: Path) -> None:
+def test_export_rows_use_feature_id_and_reference_dedupes(tmp_path: Path) -> None:
     export = tmp_path / "features.geojsonseq"
     export.write_text(
         '{"type":"Feature","id":"node/1","properties":{"name":"Keppoch","place":"suburb"},'
@@ -100,7 +111,7 @@ def test_rows_from_export_uses_feature_id_and_dedupes(tmp_path: Path) -> None:
         '"geometry":{"type":"Point","coordinates":[-63.108,46.202]}}\n',
         encoding="utf-8",
     )
-    buckets = rows_from_export(export, {"suburb": 0.4, "hamlet": 0.2, "other": 0.2})
+    buckets = _reference_rows(export, {"suburb": 0.4, "hamlet": 0.2, "other": 0.2})
     assert [row["id"] for row in buckets["places"]] == ["node/1", "places:keppoch:-63.108000:46.202000"]
 
 
@@ -124,7 +135,7 @@ def test_staged_build_matches_reference_across_batch_boundary(tmp_path: Path) ->
             }
             handle.write(json.dumps(duplicate) + "\n")
     priors = {"city": 0.5, "town": 0.9, "other": 0.2}
-    expected = rows_from_export(export, priors)
+    expected = _reference_rows(export, priors)
     output = tmp_path / "output"
     counts = build_parquet_datasets(export, priors, output)
     for name in PARQUET_DATASETS:

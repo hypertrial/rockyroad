@@ -171,15 +171,6 @@ def aliases(props: dict[str, Any]) -> str:
     return " ".join(values)
 
 
-def dedupe_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    best: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        current = best.get(row["id"])
-        if current is None or float(row.get("importance") or 0) > float(current.get("importance") or 0):
-            best[row["id"]] = row
-    return list(best.values())
-
-
 def importance_for(feature_kind: str, priors: dict[str, float], population_score: float) -> float:
     prior = float(priors.get(feature_kind, priors.get("other", 0.2)))
     return min(1.0, 0.65 * prior + 0.35 * population_score)
@@ -192,13 +183,6 @@ def iter_geojsonseq(path: Path) -> Iterator[dict[str, Any]]:
             if not line:
                 continue
             yield json.loads(line)
-
-
-def rows_from_export(export_path: Path, priors: dict[str, float]) -> dict[str, list[dict[str, Any]]]:
-    buckets: dict[str, list[dict[str, Any]]] = {name: [] for name in PARQUET_DATASETS}
-    for dataset, row in iter_export_rows(export_path, priors):
-        buckets[dataset].append(row)
-    return {name: dedupe_rows(items) for name, items in buckets.items()}
 
 
 def iter_export_rows(export_path: Path, priors: dict[str, float]) -> Iterator[tuple[str, dict[str, Any]]]:
@@ -267,18 +251,6 @@ SCHEMA = {
     "type_prior": pl.Float64,
     "admin_level": pl.Utf8,
 }
-
-
-def write_parquet_datasets(buckets: dict[str, list[dict[str, Any]]], output_dir: Path) -> dict[str, Path]:
-    written: dict[str, Path] = {}
-    for name in PARQUET_DATASETS:
-        frame = pl.DataFrame(buckets.get(name, []), schema=SCHEMA)
-        destination = output_dir / f"{name}.parquet"
-        tmp = destination.with_suffix(".parquet.tmp")
-        frame.write_parquet(tmp)
-        tmp.replace(destination)
-        written[name] = destination
-    return written
 
 
 def build_parquet_datasets(export_path: Path, priors: dict[str, float], output_dir: Path) -> dict[str, int]:
