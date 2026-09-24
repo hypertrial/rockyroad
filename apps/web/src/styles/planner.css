@@ -944,7 +944,7 @@
     left: 0.5rem;
     z-index: 12;
     max-height: calc(100% - 1rem);
-    height: min(72dvh, calc(100% - 1rem));
+    height: min(88dvh, calc(100% - 7rem));
     overflow: hidden;
     border: 1px solid var(--color-line);
     border-radius: 1.35rem;
@@ -968,6 +968,7 @@
   }
 
   .planner-panel[data-expanded="false"] .planner-header {
+    display: block;
     padding-top: 0.2rem;
     padding-bottom: 0.25rem;
   }
@@ -1001,7 +1002,27 @@
   }
 
   .planner-header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.5rem;
     padding-top: 0.25rem;
+  }
+
+  .planner-back {
+    margin-bottom: 0;
+  }
+
+  .planner-title-row {
+    min-width: 0;
+  }
+
+  .title-save-state {
+    grid-column: 1 / -1;
+  }
+
+  .title-save-state:empty {
+    display: none;
   }
 
   .planner-tabs {
@@ -1010,6 +1031,34 @@
 
   .planner-panel-body {
     padding-top: 0.8rem;
+  }
+
+  .planner-panel[data-panel="directions"][data-route-blocked="false"][data-optimize-blocked="false"] .route-action-hint {
+    display: none;
+  }
+
+  .planner-panel[data-panel="directions"][data-has-route="true"][data-route-blocked="false"] .route-action-hint > span:first-child {
+    display: none;
+  }
+
+  .planner-panel[data-panel="directions"] .planner-tool {
+    gap: 0.25rem;
+  }
+
+  .planner-panel[data-panel="directions"] .planner-panel-body {
+    padding-top: 0.4rem;
+  }
+
+  .route-alternative {
+    min-height: 2.75rem;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.1rem 0.35rem;
+    padding: 0.4rem 0.55rem;
+  }
+
+  .route-alternative small {
+    grid-column: 1 / -1;
   }
 
   .map-wrap,
@@ -1042,7 +1091,7 @@
     bottom: max(0.35rem, env(safe-area-inset-bottom));
     left: 0.35rem;
     max-height: calc(100% - 0.7rem);
-    height: min(74dvh, calc(100% - 0.7rem));
+    height: min(88dvh, calc(100% - 7rem));
     border-radius: 1.15rem;
   }
 

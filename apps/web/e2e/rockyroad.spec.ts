@@ -34,6 +34,56 @@ async function expectPlannerLockedToViewport(page: Parameters<typeof mockRockyRo
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
 }
 
+async function expectVisibleInPanel(page: Page, target: Locator) {
+  const body = await page.locator(".planner-panel-body").boundingBox();
+  const control = await target.boundingBox();
+  expect(body && control && control.y >= body.y && control.y + control.height <= body.y + body.height, JSON.stringify({ body, control })).toBe(true);
+}
+
+test("short screens show primary dashboard and planner tasks without scrolling", async ({ page }) => {
+  for (const width of [360, 768]) {
+    await page.setViewportSize({ width, height: 669 });
+    await mockRockyRoad(page, { routeReady: true });
+    await page.goto("/");
+    await expect(page.getByRole("button", { name: "Create trip" })).toBeInViewport();
+    await expectNoHorizontalOverflow(page);
+
+    await page.goto("/trips/trip-1?panel=search");
+    await expectVisibleInPanel(page, page.getByRole("searchbox", { name: "Search places" }));
+    await page.getByRole("tab", { name: "Route" }).click();
+    await expectVisibleInPanel(page, page.getByRole("checkbox", { name: /Avoid tolls/ }));
+    await page.getByRole("tab", { name: "Directions" }).click();
+    await expectVisibleInPanel(page, page.locator(".maneuver-copy").first());
+    const sheet = await page.locator(".planner-panel").boundingBox();
+    const zoomOut = await page.locator(".maplibregl-ctrl-zoom-out").boundingBox();
+    expect(sheet && zoomOut && zoomOut.y + zoomOut.height <= sheet.y).toBe(true);
+    await expectNoHorizontalOverflow(page);
+    await expectPlannerLockedToViewport(page);
+  }
+});
+
+test("responsive breakpoints keep dashboard and planner within the viewport", async ({ page }) => {
+  for (const width of [639, 899, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 800 });
+    await mockRockyRoad(page, { routeReady: true });
+    await page.goto("/");
+    await expectNoHorizontalOverflow(page);
+    await page.goto("/trips/trip-1?panel=directions");
+    await expect(page.getByRole("button", { name: "Build route" })).toBeInViewport();
+    await expectNoHorizontalOverflow(page);
+    await expectPlannerLockedToViewport(page);
+  }
+});
+
+test("phone directions explain when map coverage blocks a route", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 669 });
+  await mockRockyRoad(page, { outsideCoverage: true });
+  await page.goto("/trips/trip-1?panel=directions");
+  await expect(page.getByRole("button", { name: "Build route" })).toBeDisabled();
+  await expect(page.locator(".route-action-hint")).toContainText("outside the current map coverage");
+  await expect(page.locator(".route-action-hint")).toBeInViewport();
+});
+
 test("dashboard is responsive, accessible, and supports safe trip deletion", async ({ page }) => {
   expectedResourceErrors = 1;
   await page.setViewportSize({ width: 360, height: 800 });

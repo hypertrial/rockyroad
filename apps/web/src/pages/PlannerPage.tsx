@@ -277,7 +277,15 @@ export function PlannerPage() {
 
   return (
     <main id="main-content" className="planner-shell" tabIndex={-1}>
-      <aside className="planner-panel" data-expanded={sheetExpanded} aria-label="Trip planner">
+      <aside
+        className="planner-panel"
+        data-expanded={sheetExpanded}
+        data-panel={activePanel}
+        data-has-route={Boolean(selected)}
+        data-route-blocked={Boolean(routeBlockedReason)}
+        data-optimize-blocked={Boolean(optimizeBlockedReason)}
+        aria-label="Trip planner"
+      >
         <button
           ref={sheetToggleRef}
           type="button"

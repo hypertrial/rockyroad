@@ -308,25 +308,25 @@
   }
 
   .dashboard-hero {
-    gap: 2rem;
+    gap: 1rem;
     border-radius: 1.35rem;
-    padding: 1.3rem;
+    padding: 1rem;
   }
 
   .hero-copy h1 {
-    font-size: clamp(2.55rem, 14vw, 3.55rem);
+    margin: 0.35rem 0 0.6rem;
+    font-size: clamp(2.3rem, 12vw, 3.1rem);
   }
 
   .hero-copy > p {
-    font-size: 0.96rem;
-  }
-
-  .hero-trust {
-    align-items: flex-start;
+    margin-bottom: 0;
+    font-size: 0.9rem;
+    line-height: 1.45;
   }
 
   .create-trip-card {
-    padding: 1.15rem;
+    gap: var(--space-2);
+    padding: 1rem;
   }
 
   .trips-section {

@@ -7,6 +7,7 @@ type MockOptions = {
   manyStops?: boolean;
   routeReady?: boolean;
   longDirections?: boolean;
+  outsideCoverage?: boolean;
   providerMode?: "hosted" | "local";
   tripListDelayMs?: number;
   healthDelayMs?: number;
@@ -69,7 +70,7 @@ export async function mockRockyRoad(page: Page, options: MockOptions = {}) {
     ? []
     : [
         { id: "stop-a", trip_id: "trip-1", position: 0, name: "Charlottetown", lon: -63.13, lat: 46.24, place_id: "p-a", created_at: now, region: "Prince Edward Island, Canada" },
-        { id: "stop-b", trip_id: "trip-1", position: 1, name: "Summerside", lon: -63.79, lat: 46.39, place_id: "p-b", created_at: now, region: null },
+        { id: "stop-b", trip_id: "trip-1", position: 1, name: "Summerside", lon: options.outsideCoverage ? -80 : -63.79, lat: 46.39, place_id: "p-b", created_at: now, region: null },
       ];
   const manyStops: Stop[] = options.manyStops
     ? Array.from({ length: 10 }, (_, index) => ({
