@@ -57,15 +57,17 @@ uv run rockyroad-data build-places
 
 ## Expected size and time
 
-These are order-of-magnitude numbers; hardware and Geofabrik freshness change them. Hosted mode does not need these builds.
+These are order-of-magnitude numbers for all local artifact builds; hardware and Geofabrik freshness change them. Hosted mode does not need these builds.
 
 | Profile | Download | PMTiles | Valhalla tiles | Parquet | RAM | Wall time |
 | --- | --- | --- | --- | --- | --- | --- |
 | sample (PEI) | ~30–50 MB | ~40–80 MB | ~100–250 MB | <20 MB | 4 GB | 10–30 min |
-| canada-usa | ~10–15 GB | 20–40 GB | 40–80 GB | 1–3 GB | 32–64 GB | many hours |
+| canada-usa | ~20 GB | 20–40 GB | 40–80 GB | ~40 MB measured | 32–64 GB | many hours for all builds |
 
 Keep generated PBF, PMTiles, graphs, Parquet, and DuckDB files out of Git.
-The optional place build writes 10,000-row Parquet chunks and DuckDB spill files under `data/geo` (or the selected output directory). Allow temporary disk space beyond the final Parquet size; the build removes these files on success or failure. The DuckDB deduplication step has a 512 MB memory limit. Full-region peak memory and elapsed time have not been measured.
+The optional place build writes 10,000-row Parquet chunks and DuckDB spill files under `data/geo` (or the selected output directory). Allow temporary disk space beyond the final Parquet size; the build removes these files on success or failure. The DuckDB deduplication step has a 512 MB memory limit.
+
+One full `canada-usa` place build on the 2026-09-24 Geofabrik extracts completed in 27 minutes on a Mac with a 10 GiB Colima VM. Its merged input was 18.7 GB; the six Parquet files held 740,410 rows in 42.5 MB. Peak Python RSS was 911 MiB, while Osmium separately reached 2.11 GiB in the container. The Docker-readable staging directory reached 19.06 GiB, and the benchmark directory temporarily grew 1.40 GiB beyond its starting contents. Disk and container peaks were sampled every five seconds, so brief peaks may be higher. Map and routing builds, API import, and full-region search performance were not part of this measurement.
 
 ## Host tools
 
